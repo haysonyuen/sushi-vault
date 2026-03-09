@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sushi-Vault — Enroll Bank Account</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 40px;
+      width: 480px;
+      text-align: center;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 8px; }
+    p { color: #94a3b8; font-size: 0.9rem; margin-bottom: 28px; line-height: 1.5; }
+    .btn {
+      display: inline-block;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 28px;
+      font-size: 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #2563eb; }
+    .btn:disabled { background: #475569; cursor: default; }
+
+    .result {
+      display: none;
+      margin-top: 28px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: left;
+    }
+    .result.visible { display: block; }
+    .result h2 { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase;
+                 letter-spacing: 0.05em; margin-bottom: 10px; }
+    .token-box {
+      background: #1e293b;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      word-break: break-all;
+      color: #34d399;
+      margin-bottom: 14px;
+    }
+    .copy-btn {
+      background: #334155;
+      color: #e2e8f0;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .copy-btn:hover { background: #475569; }
+    .instruction {
+      margin-top: 16px;
+      background: #1e3a5f;
+      border: 1px solid #3b82f6;
+      border-radius: 6px;
+      padding: 14px;
+      font-size: 0.83rem;
+      line-height: 1.7;
+      color: #bfdbfe;
+    }
+    .instruction code {
+      background: #0f172a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      color: #34d399;
+    }
+    .error {
+      display: none;
+      margin-top: 20px;
+      background: #450a0a;
+      border: 1px solid #dc2626;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 0.85rem;
+      color: #fca5a5;
+    }
+    .error.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Enroll a Bank Account</h1>
+    <p>Click the button below to open Teller Connect and link your Chase account.<br>
+       After authorization, your new access token will appear here.</p>
+
+    <button class="btn" id="connect-btn" onclick="openTeller()">Connect Chase Account</button>
+
+    <div class="result" id="result">
+      <h2>Access Token</h2>
+      <div class="token-box" id="token-display"></div>
+      <button class="copy-btn" onclick="copyToken()">Copy Token</button>
+      <div class="instruction" id="instruction"></div>
+    </div>
+
+    <div class="error" id="error-box"></div>
+  </div>
+
+  <script src="https://cdn.teller.io/connect/connect.js"></script>
+  <script>
+    // Pull app ID from query string (?app=...) or fall back to the placeholder
+    const params = new URLSearchParams(location.search);
+    const APP_ID = params.get('app') || 'app_pphf68opjbnb05i3r6000';
+
+    let capturedToken = '';
+
+    function openTeller() {
+      const btn = document.getElementById('connect-btn');
+      btn.disabled = true;
+      btn.textContent = 'Opening Teller Connect…';
+
+      const connect = TellerConnect.setup({
+        applicationId: APP_ID,
+        onInit() {
+          btn.disabled = false;
+          btn.textContent = 'Connect Chase Account';
+        },
+        onSuccess(enrollment) {
+          capturedToken = enrollment.accessToken;
+          showResult(capturedToken);
+          btn.textContent = 'Connect Another Account';
+          btn.disabled = false;
+        },
+        onExit() {
+          btn.disabled = false;
+          btn.textContent = 'Connect Chase Account';
+        },
+        onFailure(failure) {
+          showError('Enrollment failed: ' + (failure.message || JSON.stringify(failure)));
+          btn.disabled = false;
+          btn.textContent = 'Connect Chase Account';
+        },
+      });
+
+      connect.open();
+    }
+
+    function showResult(token) {
+      document.getElementById('token-display').textContent = token;
+
+      const wfToken = 'token_54ldjoohvfxlljuntzgehapxh4';
+      document.getElementById('instruction').innerHTML =
+        'Add this line to your <code>.env</code> file:<br><br>' +
+        '<code>TELLER_ACCESS_TOKENS=' + wfToken + ',' + token + '</code><br><br>' +
+        'Then restart the server: <code>node src/api.js</code>';
+
+      document.getElementById('result').classList.add('visible');
+      document.getElementById('error-box').classList.remove('visible');
+    }
+
+    function copyToken() {
+      navigator.clipboard.writeText(capturedToken).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy Token', 2000);
+      });
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('error-box');
+      box.textContent = msg;
+      box.classList.add('visible');
+    }
+  </script>
+</body>
+</html>

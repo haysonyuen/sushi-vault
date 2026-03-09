@@ -1,0 +1,21 @@
+{
+  "name": "sushi-vault",
+  "version": "1.0.0",
+  "description": "Private financial intelligence MCP server for Teller.io",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "ui": "node src/api.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@modelcontextprotocol/sdk": "^1.10.1",
+    "dotenv": "^16.4.5",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

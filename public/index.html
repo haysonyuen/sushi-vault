@@ -1,0 +1,1745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sushi-Vault</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0b1120;
+      --surface: #111827;
+      --surface2: #1a2438;
+      --border: #1f2d42;
+      --text: #e8edf5;
+      --muted: #7a8ba0;
+      --accent: #38bdf8;
+      --green: #4ade80;
+      --red: #f87171;
+      --amber: #fbbf24;
+      --radius: 14px;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-bottom: 48px;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .logo-icon { font-size: 24px; }
+    .logo-sub { font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .header-date { font-size: 13px; color: var(--muted); }
+    .btn-refresh {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .btn-refresh:hover { background: var(--border); }
+    .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Main layout ── */
+    main { max-width: 1400px; margin: 0 auto; padding: 28px 32px; }
+
+    /* ── KPI row ── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 1000px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px)  { .kpi-row { grid-template-columns: 1fr; } }
+
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--kpi-accent, var(--accent));
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .kpi-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    .kpi-delta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .kpi-delta .up   { color: var(--red); }
+    .kpi-delta .down { color: var(--green); }
+    .kpi-delta .neutral { color: var(--muted); }
+    .skeleton { animation: pulse 1.5s ease-in-out infinite; }
+    .skeleton-text {
+      height: 28px; width: 140px;
+      background: var(--surface2);
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .skeleton-sub { height: 12px; width: 100px; background: var(--surface2); border-radius: 4px; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* ── Charts row ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    /* Category chart */
+    .donut-wrap {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      margin: 0 auto 20px;
+    }
+    .donut-center {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+    }
+    .donut-center-label { font-size: 11px; color: var(--muted); }
+    .donut-center-value { font-size: 20px; font-weight: 700; margin-top: 2px; }
+
+    .legend { display: flex; flex-direction: column; gap: 8px; }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+    .legend-left { display: flex; align-items: center; gap: 8px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .legend-name { color: var(--text); }
+    .legend-pct { color: var(--muted); font-size: 12px; }
+    .legend-amt { font-weight: 600; color: var(--red); }
+
+    /* ── Transactions ── */
+    .tx-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .tx-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .tx-header-left { display: flex; align-items: center; gap: 16px; }
+    .month-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .month-nav span {
+      font-size: 14px;
+      font-weight: 600;
+      min-width: 110px;
+      text-align: center;
+    }
+    .btn-nav {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      width: 30px; height: 30px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .btn-nav:hover { background: var(--border); }
+
+    .filter-tabs { display: flex; gap: 6px; }
+    .filter-tab {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 5px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .filter-tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #000;
+      font-weight: 600;
+    }
+    .filter-tab:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 10px 24px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    thead th:last-child { text-align: right; }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td {
+      padding: 13px 24px;
+      font-size: 13px;
+      vertical-align: middle;
+    }
+    td.amount { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+    td.amount.neg { color: var(--red); }
+    td.amount.pos { color: var(--green); }
+
+    .cat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .cat-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+    .tx-merchant { font-weight: 500; }
+    .tx-desc { font-size: 11px; color: var(--muted); margin-top: 2px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .tag-transfer {
+      display: inline-block;
+      font-size: 10px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 6px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .tx-summary {
+      display: flex;
+      gap: 24px;
+      padding: 12px 24px;
+      background: var(--surface2);
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .tx-summary strong { color: var(--text); }
+    .tx-hide-col { width: 32px; text-align: center; }
+    .tx-hide-btn {
+      background: none; border: none; color: #475569; cursor: pointer;
+      font-size: 12px; padding: 2px 5px; border-radius: 4px; line-height: 1;
+      transition: color 0.15s, background 0.15s;
+    }
+    .tx-hide-btn:hover { color: var(--red); background: rgba(248,113,113,0.1); }
+    .tx-restore-btn {
+      background: none; border: 1px solid #334155; color: var(--accent);
+      cursor: pointer; font-size: 11px; padding: 2px 8px; border-radius: 4px;
+      margin-left: 6px; transition: background 0.15s;
+    }
+    .tx-restore-btn:hover { background: rgba(56,189,248,0.1); }
+    .cmp-cat-legend {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 8px 0 12px;
+    }
+    .cmp-cat-pill {
+      font-size: 11px; padding: 3px 10px; border-radius: 20px;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .cmp-cat-pill:hover { opacity: 0.75; }
+    .cmp-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 10px; margin-bottom: 4px;
+    }
+    .cmp-header .card-title { margin-bottom: 0; }
+    .cmp-picker-row { display: flex; align-items: center; gap: 8px; }
+    .cmp-month-select {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--fg); border-radius: 6px; padding: 4px 8px;
+      font-size: 12px; cursor: pointer; outline: none;
+      transition: border-color 0.15s;
+    }
+    .cmp-month-select:focus { border-color: var(--accent); }
+    .cmp-month-select option { background: #1e293b; }
+    .cmp-vs { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+    /* ── Transaction filters ── */
+    .tx-filters {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
+      padding: 10px 0 14px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+    .tx-filter-group {
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .tx-filter-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    .tx-filter-input, .tx-filter-select {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--fg); border-radius: 6px; padding: 5px 8px;
+      font-size: 12px; outline: none; cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .tx-filter-input:focus, .tx-filter-select:focus {
+      border-color: var(--accent);
+    }
+    .tx-filter-select option { background: #1e293b; }
+    .tx-filter-clear {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer;
+      align-self: flex-end; transition: color 0.15s, border-color 0.15s;
+    }
+    .tx-filter-clear:hover { color: var(--fg); border-color: var(--fg); }
+
+    /* ── Transaction pagination ── */
+    .tx-pagination {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px;
+      padding: 10px 0 0;
+    }
+    .tx-page-controls { display: flex; align-items: center; gap: 4px; }
+    .tx-page-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--fg); border-radius: 5px; padding: 4px 10px;
+      font-size: 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+    }
+    .tx-page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .tx-page-btn:disabled { opacity: 0.35; cursor: default; }
+    .tx-page-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(56,189,248,0.08); }
+    .tx-page-info { font-size: 12px; color: var(--muted); }
+    .tx-pagesize-wrap { display: flex; align-items: center; gap: 6px; }
+    .tx-pagesize-label { font-size: 11px; color: var(--muted); }
+    .tx-pagesize-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); border-radius: 5px; padding: 3px 9px;
+      font-size: 11px; cursor: pointer; transition: all 0.15s;
+    }
+    .tx-pagesize-btn:hover { color: var(--fg); border-color: var(--fg); }
+    .tx-pagesize-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(56,189,248,0.08); }
+
+    /* ── Loading overlay ── */
+    .loading-state { color: var(--muted); font-size: 13px; padding: 40px; text-align: center; }
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-banner {
+      background: rgba(248,113,113,0.1);
+      border: 1px solid rgba(248,113,113,0.3);
+      color: var(--red);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    /* ── Chat panel ── */
+    .chat-section {
+      margin-top: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .chat-header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }
+    .chat-header-bar:hover { background: var(--surface2); }
+    .chat-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+    }
+    .chat-status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+    .chat-toggle-icon { color: var(--muted); font-size: 12px; transition: transform 0.2s; }
+    .chat-section.open .chat-toggle-icon { transform: rotate(180deg); }
+
+    .chat-body { display: none; flex-direction: column; }
+    .chat-section.open .chat-body { display: flex; }
+
+    .chat-messages {
+      height: 300px;
+      overflow-y: auto;
+      padding: 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .chat-messages::-webkit-scrollbar { width: 4px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .chat-bubble {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #000;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-bubble.assistant {
+      align-self: flex-start;
+      background: var(--surface2);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+      white-space: pre-wrap;
+    }
+    .chat-bubble.assistant.thinking {
+      color: var(--muted);
+      font-style: italic;
+    }
+    .chat-bubble.assistant.thinking::after {
+      content: '▋';
+      animation: blink 0.8s step-end infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .chat-empty {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      margin: auto;
+      padding: 24px;
+    }
+    .chat-empty p { margin-bottom: 8px; }
+    .chat-suggestions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
+    .chat-suggestion {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chat-suggestion:hover { border-color: var(--accent); color: var(--accent); }
+
+    .chat-input-row {
+      display: flex;
+      gap: 10px;
+      padding: 14px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .chat-input:focus { border-color: var(--accent); }
+    .chat-input::placeholder { color: var(--muted); }
+    .chat-send {
+      background: var(--accent);
+      border: none;
+      color: #000;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .chat-send:hover { opacity: 0.85; }
+    .chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Chat scope bar ── */
+    .chat-scope-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .chat-scope-bar.visible { display: flex; }
+    .scope-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .scope-toggle:hover { border-color: var(--accent); color: var(--accent); }
+    .scope-toggle.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(56,189,248,0.08);
+    }
+    .scope-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.15s;
+    }
+    .scope-toggle.active .scope-dot { background: var(--accent); }
+
+    /* ── Burn rate bar ── */
+    .burn-bar-wrap { margin-top: 10px; }
+    .burn-bar-track {
+      height: 5px;
+      background: var(--surface2);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .burn-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.4s ease;
+    }
+    .burn-bar-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Account selector ── */
+    .account-bar-wrap {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 32px;
+      position: sticky;
+      top: 69px;
+      z-index: 90;
+    }
+    .account-bar {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+    }
+    .account-bar::-webkit-scrollbar { display: none; }
+    .acc-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--muted);
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+    .acc-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 5px 13px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      white-space: nowrap;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .acc-pill:hover { border-color: var(--accent); color: var(--accent); }
+    .acc-pill.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+    .acc-badge {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(0,0,0,0.12);
+    }
+    .acc-pill:not(.active) .acc-badge { background: var(--surface2); color: var(--muted); }
+
+    /* ── Collapsible sections ── */
+    .section-wrap { margin-bottom: 24px; }
+    .section-wrap:last-child { margin-bottom: 0; }
+
+    .section-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 16px 9px 4px;
+      cursor: pointer;
+      user-select: none;
+      border-radius: 8px;
+      transition: background 0.15s;
+      margin-bottom: 12px;
+    }
+    .section-bar:hover { background: var(--surface2); }
+    .section-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+    }
+    .section-bar-left .section-rule {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+      min-width: 60px;
+    }
+    .section-chevron {
+      font-size: 11px;
+      color: var(--muted);
+      transition: transform 0.2s;
+    }
+    .section-wrap.collapsed .section-chevron { transform: rotate(-90deg); }
+    .section-wrap.collapsed .section-body { display: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo"><span class="logo-icon">🍣</span> Sushi-Vault</div>
+    <div class="logo-sub">Private Financial Intelligence</div>
+  </div>
+  <div class="header-right">
+    <span class="header-date" id="header-date"></span>
+    <button class="btn-refresh" id="btn-refresh" onclick="refreshAll()">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="account-bar-wrap">
+  <div class="account-bar" id="account-bar">
+    <span class="acc-label">Account</span>
+    <button class="acc-pill active">All Accounts</button>
+  </div>
+</div>
+
+<main>
+  <div class="error-banner" id="error-banner"></div>
+
+  <!-- KPI Cards -->
+  <div class="section-wrap" id="sec-kpi">
+    <div class="section-bar" onclick="toggleSection('sec-kpi')">
+      <div class="section-bar-left">Overview</div>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="kpi-row">
+        <div class="kpi-card" style="--kpi-accent: #38bdf8" id="kpi-liquidity">
+          <div class="kpi-label">Net Liquidity</div>
+          <div class="skeleton"><div class="skeleton-text"></div><div class="skeleton-sub"></div></div>
+        </div>
+        <div class="kpi-card" style="--kpi-accent: #f87171" id="kpi-spend">
+          <div class="kpi-label">Month Spend</div>
+          <div class="skeleton"><div class="skeleton-text"></div><div class="skeleton-sub"></div></div>
+        </div>
+        <div class="kpi-card" style="--kpi-accent: #4ade80" id="kpi-income">
+          <div class="kpi-label">Month Income</div>
+          <div class="skeleton"><div class="skeleton-text"></div><div class="skeleton-sub"></div></div>
+        </div>
+        <div class="kpi-card" style="--kpi-accent: #fbbf24" id="kpi-burn">
+          <div class="kpi-label">Burn Rate</div>
+          <div class="skeleton"><div class="skeleton-text"></div><div class="skeleton-sub"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="section-wrap" id="sec-charts">
+    <div class="section-bar" onclick="toggleSection('sec-charts')">
+      <div class="section-bar-left">Charts</div>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="charts-row">
+        <div class="card" id="category-card">
+          <div class="card-title">Spending by Category</div>
+          <div class="loading-state"><span class="spinner"></span>Loading...</div>
+        </div>
+        <div class="card" id="comparison-card">
+          <div class="card-title">Month over Month</div>
+          <div class="loading-state"><span class="spinner"></span>Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transactions -->
+  <div class="section-wrap" id="sec-txns">
+    <div class="section-bar" onclick="toggleSection('sec-txns')">
+      <div class="section-bar-left">Transactions</div>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="tx-card" id="tx-card">
+        <div class="tx-header">
+          <div class="tx-header-left">
+            <div class="month-nav">
+              <button class="btn-nav" onclick="navigate(-1)">&#8249;</button>
+              <span id="month-label">—</span>
+              <button class="btn-nav" onclick="navigate(1)">&#8250;</button>
+            </div>
+          </div>
+          <div class="filter-tabs">
+            <button class="filter-tab active" onclick="setFilter('all', this)">All</button>
+            <button class="filter-tab" onclick="setFilter('spend', this)">Spending</button>
+            <button class="filter-tab" onclick="setFilter('income', this)">Income</button>
+            <button class="filter-tab" onclick="setFilter('transfer', this)">Transfers</button>
+          </div>
+        </div>
+        <div class="tx-filters" id="tx-filters">
+          <div class="tx-filter-group">
+            <label class="tx-filter-label">From</label>
+            <input type="date" id="tx-date-from" class="tx-filter-input" onchange="setTxDateFrom(this.value)">
+          </div>
+          <div class="tx-filter-group">
+            <label class="tx-filter-label">To</label>
+            <input type="date" id="tx-date-to" class="tx-filter-input" onchange="setTxDateTo(this.value)">
+          </div>
+          <div class="tx-filter-group">
+            <label class="tx-filter-label">Category</label>
+            <select id="tx-cat-filter" class="tx-filter-select" onchange="setTxCategory(this.value)">
+              <option value="">All Categories</option>
+            </select>
+          </div>
+          <button class="tx-filter-clear" onclick="clearTxFilters()">Clear</button>
+        </div>
+        <div id="tx-body-wrap">
+          <div class="loading-state"><span class="spinner"></span>Loading transactions...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Chat -->
+  <div class="chat-section open" id="chat-section">
+    <div class="chat-header-bar" onclick="toggleChat()">
+      <div class="chat-header-left">
+        <div class="chat-status-dot"></div>
+        Ask your finances
+      </div>
+      <span class="chat-toggle-icon">▼</span>
+    </div>
+    <div class="chat-body">
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-empty" id="chat-empty">
+          <p>Ask anything about your spending, income, or accounts.</p>
+          <div class="chat-suggestions">
+            <span class="chat-suggestion" onclick="askSuggestion(this)">What did I spend the most on this month?</span>
+            <span class="chat-suggestion" onclick="askSuggestion(this)">How is my burn rate compared to last month?</span>
+            <span class="chat-suggestion" onclick="askSuggestion(this)">Where can I cut back?</span>
+            <span class="chat-suggestion" onclick="askSuggestion(this)">How much did I spend on food?</span>
+          </div>
+        </div>
+      </div>
+      <div class="chat-scope-bar" id="chat-scope-bar">
+        <button class="scope-toggle" id="scope-toggle" onclick="toggleScope()">
+          <span class="scope-dot"></span>
+          <span id="scope-label">This card only</span>
+        </button>
+        <span>Limit questions to active account</span>
+      </div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="chat-input" type="text" placeholder="Ask anything about your finances…" onkeydown="if(event.key==='Enter')sendChat()" />
+        <button class="chat-send" id="chat-send" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const CATEGORIES = [
+  // Bills & transfers (checked first — most specific)
+  { name: 'Housing',        color: '#818cf8', match: /MORTGAGE|RENT|HOA|PNC LENDING/i },
+  { name: 'Credit Payment', color: '#c084fc', match: /DISCOVER|AMEX|CAPITAL ONE|CITI|SYNCHRONY|BARCLAYS|AUTOPAY/i },
+  { name: 'Utilities',      color: '#38bdf8', match: /PG&E|UTILITY|ELECTRIC|WATER|AT&T|VERIZON|COMCAST|XFINITY|T-MOBILE|TMOBILE/i },
+  { name: 'Insurance',      color: '#a78bfa', match: /INSURANCE|STATE FARM|GEICO|ALLSTATE|PROGRESSIVE/i },
+  { name: 'Peer Transfer',  color: '#facc15', match: /VENMO|CASHAPP|CASH APP|ZELLE|PAYPAL/i },
+  { name: 'Wise Transfer',  color: '#a78bfa', match: /WISE/i },
+  { name: 'International',  color: '#34d399', match: /WESTERN UNION|REMIT|WEIXIN|WECHAT|ALIPAY/i },
+  { name: 'Cash / ATM',     color: '#fb923c', match: /ATM|CASH ADVANCE|WITHDRAWAL/i },
+
+  // Food — most specific first
+  { name: 'Food Delivery',  color: '#f97316', match: /DOORDASH|UBER EATS|UBEREATS|GRUBHUB|POSTMATES|INSTACART/i },
+  { name: 'Coffee',         color: '#d97706', match: /STARBUCKS|DUTCH BROS|PEET|COFFEE|BOBA|BUBBLE TEA|MILK TEA|TEA BAR|MOLLY TEA|GONG CHA|TIGER SUGAR|HAPPY LEMON|T4|KTREND/i },
+  { name: 'Fast Food',      color: '#fbbf24', match: /MCDONALD|CHIPOTLE|PANDA|CHICK-FIL|TACO BELL|BURGER KING|WENDY|SUBWAY|JACK IN THE BOX|IN-N-OUT|IN N OUT|FIVE GUYS|RAISING CANE/i },
+  { name: 'Dining Out',     color: '#4ade80', match: /RESTAURANT|PIZZA|SUSHI|GRILL|BISTRO|KITCHEN|EATERY|DINER|BAR & GRILL|CAFE|IZAKAYA|RAMEN|NOODLE|BBQ|HOTPOT|DIM SUM|BUFFET|STEAKHOUSE|SEAFOOD|DUMPLING|THAI|VIETNAMESE|POKE|TAQUERIA|TERIYAKI|BENTO|CURRY|CHOPSTICKS|CHANG FEN|PHO|SAKE|PUERTA DEL SOL|JANG SU JANG|CHICKEN MEETS RICE|UME|CLASSIC|YIN JI|TOFU HOUSE|TOFU SOUP|SKEWER|GOLDEN GARLIC|APNI MANDI|YESMEAL|SHABU|YAKITORI|UDON|GYOZA|BANH MI|WONTON|WON TON|BANCHAN|SGD TOFU|MILPITAS SGD|DANAWA|TAI KEE/i },
+
+  // Groceries — warehouse clubs & supermarkets & specialty
+  { name: 'Asian Market',   color: '#10b981', match: /H MART|99 RANCH|MITSUWA|MARUKAI|HANKOOK|KOREAN MARKET|ASIAN MARKET|PACIFIC EAST|SEAFOOD CITY|HAWAII SUPER|LION MARKET|HONG KONG MARKET|NIJIYA|AIHUA|SHUN FAT|RANCH 99|RANCH|WEE|OSAKA/i },
+  { name: 'Costco',         color: '#3b82f6', match: /COSTCO/i },
+  { name: 'Groceries',      color: '#22d3ee', match: /SAFEWAY|KROGER|WHOLE FOODS|TRADER JOE|SPROUTS|VONS|RALPHS|HEB|PUBLIX|ALDI|RALEY|GROCERY|SUPERMARKET|FOOD MART|FOOD 4 LESS|SMART &/i },
+
+  // Retail
+  { name: 'Target',         color: '#ef4444', match: /TARGET/i },
+  { name: 'Walmart',        color: '#1d4ed8', match: /WALMART|WAL-MART/i },
+  { name: 'Amazon',         color: '#f59e0b', match: /AMAZON(?!.*PRIME)/i },
+  { name: 'Shopping',       color: '#60a5fa', match: /EBAY|BEST BUY|BESTBUY|HOME DEPOT|LOWES|IKEA|MACY|NORDSTROM|ROSS|TJ MAXX|MARSHALLS/i },
+
+  // Health & personal
+  { name: 'Health',         color: '#e879f9', match: /CVS|WALGREENS|RITE AID|PHARMACY|DOCTOR|MEDICAL|DENTAL|VISION|OPTOMETRY|KAISER|URGENT CARE|CLINIC/i },
+  { name: 'Gas',            color: '#6b7280', match: /CHEVRON|SHELL|ARCO|VALERO|BP|EXXON|MOBIL|GAS STATION/i },
+  { name: 'Transportation', color: '#94a3b8', match: /\bUBER\b(?! EATS)|LYFT|METRO|TRANSIT|PARKING|TOLL|DMV/i },
+  { name: 'Ski Trip',       color: '#67e8f9', match: /\bSKI\b|SNOWBOARD|SNOW\.COM|VAIL RESORTS|VILLAGE SKI|DONNER SKI|DONNERSKIRANCH|LIFT TICKET|EPIC PASS|IKON PASS|MAMMOTH|NORTHSTAR|HEAVENLY|KIRKWOOD|PALISADES/i },
+  { name: 'Travel',         color: '#0ea5e9', match: /AIRLINE|HOTEL|MARRIOTT|HILTON|HYATT|AIRBNB|EXPEDIA|BOOKING|UNITED|DELTA|SOUTHWEST|ALASKA AIR|VACASA/i },
+
+  // Entertainment & subscriptions
+  { name: 'Subscriptions',  color: '#f472b6', match: /NETFLIX|SPOTIFY|HULU|DISNEY|APPLE.*SUB|YOUTUBE.*PREMIUM|AMAZON.*PRIME/i },
+  { name: 'Gaming',         color: '#c084fc', match: /STEAM|PLAYSTATION|XBOX|NINTENDO|GOOGLE PLAY/i },
+  { name: 'Education',      color: '#84cc16', match: /TUITION|SCHOOL|UNIVERSITY|UDEMY|COURSERA/i },
+];
+const CAT_OTHER = { name: 'Other', color: '#475569' };
+
+const TELLER_CATEGORY_MAP = {
+  'dining':    'Dining Out',
+  'fuel':      'Gas',
+  'groceries': 'Groceries',
+  'home':      'Housing',
+  'insurance': 'Insurance',
+  'loan':      'Credit Payment',
+  'phone':     'Utilities',
+  'shopping':  'Shopping',
+  'software':  'Subscriptions',
+  'office':    'Shopping',
+};
+
+function categorize(txn) {
+  const text = `${txn.counterparty || ''} ${txn.description || ''}`.toUpperCase();
+  // Layer 1: regex (specific merchants take priority)
+  for (const c of CATEGORIES) if (c.match.test(text)) return c;
+  // Layer 2: Teller's category as fallback
+  const tellerName = TELLER_CATEGORY_MAP[txn.category];
+  if (tellerName) {
+    const match = CATEGORIES.find(c => c.name === tellerName);
+    if (match) return match;
+  }
+  // Layer 3: Claude AI classification (attached server-side at cache time)
+  if (txn.aiCategory) {
+    const match = CATEGORIES.find(c => c.name === txn.aiCategory);
+    if (match) return match;
+  }
+  return CAT_OTHER;
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+const today = new Date();
+let viewYear  = today.getFullYear();
+let viewMonth = today.getMonth(); // 0-indexed
+let currentTxns   = [];   // current month, all accounts
+let prevTxns      = [];   // previous month, all accounts
+let allCachedTxns = [];   // full wide-range fetch, all accounts
+let allViewTxns   = [];   // currently visible (post account+type filter)
+let activeFilter     = 'all';
+let selectedAccount  = null; // null = all accounts
+let chatScopeActive  = false; // true = chat scoped to selectedAccount
+let categoryChart    = null;
+let comparisonChart  = null;
+let hiddenTxnIds            = new Set(); // individually hidden transactions
+let hiddenCompareCategories = new Set(); // categories hidden from comparison chart
+let cmpA = null; // {year, month} — null = current view month
+let cmpB = null; // {year, month} — null = prev month
+let compareTxnCache = new Map(); // 'YYYY-MM' → raw txns[]
+let txPageSize       = 20;   // rows per page: 10 or 20
+let txPage           = 0;    // current page (0-indexed)
+let txDateFrom       = '';   // date filter start (YYYY-MM-DD)
+let txDateTo         = '';   // date filter end (YYYY-MM-DD)
+let txCategoryFilter = '';   // category name filter or '' for all
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fmt(n) {
+  return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDate(dateStr) {
+  const [, m, d] = dateStr.split('-');
+  return MONTH_SHORT[parseInt(m) - 1] + ' ' + parseInt(d);
+}
+function monthRange(year, month) {
+  const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const last  = new Date(year, month + 1, 0).getDate();
+  const end   = `${year}-${String(month + 1).padStart(2, '0')}-${last}`;
+  return { start, end };
+}
+function prevMonth(year, month) {
+  return month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 };
+}
+function isSpending(t) {
+  if (t.isInternalTransfer) return false;
+  return t.isCredit ? t.amount > 0 : t.amount < 0;
+}
+function isIncome(t) {
+  if (t.isInternalTransfer) return false;
+  return !t.isCredit && t.amount > 0;
+}
+function totalSpend(txns) { return txns.filter(isSpending).reduce((s, t) => s + Math.abs(t.amount), 0); }
+function totalIncome(txns) { return txns.filter(isIncome).reduce((s, t) => s + t.amount, 0); }
+
+// ── Burn rate helpers (client-side, no extra API call) ───────────────────────
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function toISO(d) { return d.toISOString().split('T')[0]; }
+function wkStart(d) { const day = d.getDay(); return addDays(d, day === 0 ? -6 : 1 - day); }
+function sumSpend(txns) {
+  return txns.filter(t => !t.isInternalTransfer).reduce((s, t) => {
+    if (t.isCredit) return t.amount > 0 ? s + t.amount : s;
+    return t.amount < 0 ? s + Math.abs(t.amount) : s;
+  }, 0);
+}
+function computeBurnRate(allTxns) {
+  const thisWeekStart = wkStart(today);
+  const priorEnd      = addDays(thisWeekStart, -1);
+  const thisWeekTxns  = allTxns.filter(t => t.date >= toISO(thisWeekStart) && t.date <= toISO(today));
+  const spend         = sumSpend(thisWeekTxns);
+  const daysElapsed   = Math.max(1, Math.floor((today - thisWeekStart) / 86400000) + 1);
+  const dailyRate     = spend / daysElapsed;
+  const projected     = dailyRate * 7;
+  const priorWeekSpends = Array.from({ length: 4 }, (_, i) => {
+    const wEnd   = addDays(priorEnd, -(i * 7));
+    const wStart = addDays(priorEnd, -(6 + i * 7));
+    return sumSpend(allTxns.filter(t => t.date >= toISO(wStart) && t.date <= toISO(wEnd)));
+  });
+  const priorAvg = priorWeekSpends.reduce((s, v) => s + v, 0) / 4;
+  const delta    = projected - priorAvg;
+  return { thisWeek: { spend, daysElapsed, dailyRate, projected }, priorAvg, delta, pct: priorAvg > 0 ? (delta / priorAvg) * 100 : 0 };
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.getElementById('header-date').textContent = today.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+
+async function refreshAll() {
+  const btn = document.getElementById('btn-refresh');
+  btn.disabled = true;
+  btn.textContent = '↻ Refreshing…';
+  try {
+    // Only 2 API calls total: liquidity + one wide transaction fetch.
+    // All views (current month, prev month, burn rate) are split client-side.
+    await Promise.all([loadLiquidity(), loadAllData()]);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Refresh';
+  }
+}
+
+async function loadLiquidity() {
+  try {
+    const res  = await fetch('/api/liquidity');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderLiquidityKPI(data);
+  } catch (e) {
+    showKPIError('kpi-liquidity', e.message);
+  }
+}
+
+async function loadAllData() {
+  const p   = prevMonth(viewYear, viewMonth);
+  const prv = monthRange(p.year, p.month);
+  const cur = monthRange(viewYear, viewMonth);
+
+  // Widest range needed: earlier of (prev month start, burn rate window start)
+  const burnRateStart = addDays(wkStart(today), -28);
+  const wideStart     = [prv.start, toISO(burnRateStart)].sort()[0];
+  const wideEnd       = toISO(today);
+
+  document.getElementById('month-label').textContent = `${MONTH_NAMES[viewMonth]} ${viewYear}`;
+  document.getElementById('tx-body-wrap').innerHTML = `<div class="loading-state"><span class="spinner"></span>Loading transactions...</div>`;
+
+  try {
+    const res  = await fetch(`/api/transactions?start=${wideStart}&end=${wideEnd}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // Split the single response into views client-side — no extra Teller calls
+    const allTxns = data.transactions;
+    currentTxns   = allTxns.filter(t => t.date >= cur.start && t.date <= cur.end);
+    prevTxns      = allTxns.filter(t => t.date >= prv.start && t.date <= prv.end);
+    allCachedTxns = allTxns;
+
+    // Rebuild compare cache from freshly fetched data
+    compareTxnCache = new Map();
+    for (const t of allCachedTxns) {
+      const key = t.date.slice(0, 7);
+      if (!compareTxnCache.has(key)) compareTxnCache.set(key, []);
+      compareTxnCache.get(key).push(t);
+    }
+
+    applyAccountFilter(); // renders everything respecting current account selection
+  } catch (e) {
+    showKPIError('kpi-spend', e.message);
+    showKPIError('kpi-burn', e.message);
+    document.getElementById('tx-body-wrap').innerHTML = `<div class="loading-state" style="color:var(--red)">${e.message}</div>`;
+  }
+}
+
+// ── KPI renders ──────────────────────────────────────────────────────────────
+function renderLiquidityKPI(data) {
+  liquiditySnapshot = data;
+  renderAccountBar(data.accounts);
+  const el = document.getElementById('kpi-liquidity');
+  const accountLines = data.accounts.map(a =>
+    `<span style="color:var(--muted)">${a.alias}:</span> ${a.isCredit ? '<span style="color:var(--red)">-' + fmt(Math.abs(a.ledger)) + '</span>' : fmt(a.available)}`
+  ).join('<br/>');
+  el.innerHTML = `
+    <div class="kpi-label">Net Liquidity</div>
+    <div class="kpi-value" style="color:var(--accent)">${fmt(data.netLiquidity)}</div>
+    <div class="kpi-delta" style="flex-direction:column;align-items:flex-start;gap:2px;margin-top:6px;font-size:11px">
+      ${accountLines}
+    </div>`;
+}
+
+function renderSpendKPI(cur, prv, prevMonthIdx) {
+  const el      = document.getElementById('kpi-spend');
+  const spend   = totalSpend(cur);
+  const pSpend  = totalSpend(prv);
+  const delta   = spend - pSpend;
+  const pct     = pSpend > 0 ? (delta / pSpend) * 100 : 0;
+  const dir     = delta > 0 ? 'up' : delta < 0 ? 'down' : 'neutral';
+  const arrow   = delta > 0 ? '↑' : delta < 0 ? '↓' : '—';
+  el.innerHTML = `
+    <div class="kpi-label">Month Spend</div>
+    <div class="kpi-value" style="color:var(--red)">${fmt(spend)}</div>
+    <div class="kpi-delta">
+      <span class="${dir}">${arrow} ${fmt(Math.abs(delta))} (${Math.abs(pct).toFixed(1)}%)</span>
+      <span class="neutral">vs ${MONTH_SHORT[prevMonthIdx]}</span>
+    </div>`;
+}
+
+function renderIncomeKPI(cur, prv) {
+  const el     = document.getElementById('kpi-income');
+  const income = totalIncome(cur);
+  const pInc   = totalIncome(prv);
+  const delta  = income - pInc;
+  const dir    = delta >= 0 ? 'down' : 'up'; // down = good for income (more income)
+  const arrow  = delta > 0 ? '↑' : delta < 0 ? '↓' : '—';
+  el.innerHTML = `
+    <div class="kpi-label">Month Income</div>
+    <div class="kpi-value" style="color:var(--green)">${fmt(income)}</div>
+    <div class="kpi-delta">
+      <span class="${delta >= 0 ? 'down' : 'up'}">${arrow} ${fmt(Math.abs(delta))}</span>
+      <span class="neutral">vs prior month</span>
+    </div>`;
+}
+
+function renderBurnKPI(data) {
+  const el    = document.getElementById('kpi-burn');
+  const dir   = data.pct > 0 ? 'up' : data.pct < 0 ? 'down' : 'neutral';
+  const arrow = data.pct > 0 ? '↑' : data.pct < 0 ? '↓' : '—';
+  const barPct = Math.min(100, data.priorAvg > 0 ? (data.thisWeek.projected / data.priorAvg) * 100 : 50);
+  const barColor = data.pct > 15 ? 'var(--red)' : data.pct < -15 ? 'var(--green)' : 'var(--amber)';
+  el.innerHTML = `
+    <div class="kpi-label">Burn Rate</div>
+    <div class="kpi-value" style="color:var(--amber)">${fmt(data.thisWeek.dailyRate)}<span style="font-size:14px;font-weight:400;color:var(--muted)">/day</span></div>
+    <div class="kpi-delta">
+      <span class="${dir}">${arrow} ${Math.abs(data.pct).toFixed(1)}%</span>
+      <span class="neutral">vs 4-wk avg</span>
+    </div>
+    <div class="burn-bar-wrap">
+      <div class="burn-bar-track"><div class="burn-bar-fill" style="width:${barPct}%;background:${barColor}"></div></div>
+      <div class="burn-bar-labels"><span>Proj ${fmt(data.thisWeek.projected)}/wk</span><span>Avg ${fmt(data.priorAvg)}/wk</span></div>
+    </div>`;
+}
+
+function showKPIError(id, msg) {
+  const el = document.getElementById(id);
+  const label = el.querySelector('.kpi-label')?.textContent || '';
+  el.innerHTML = `<div class="kpi-label">${label}</div><div style="color:var(--red);font-size:12px;margin-top:8px">${msg}</div>`;
+}
+
+// ── Category Chart ───────────────────────────────────────────────────────────
+function renderCategoryChart(txns) {
+  const card = document.getElementById('category-card');
+  const spending = txns.filter(isSpending);
+
+  // Tally by category
+  const tally = new Map();
+  for (const t of spending) {
+    const cat  = categorize(t);
+    const prev = tally.get(cat.name) || { ...cat, total: 0 };
+    prev.total += Math.abs(t.amount);
+    tally.set(cat.name, prev);
+  }
+  const sorted  = [...tally.values()].sort((a, b) => b.total - a.total);
+  const grandTotal = sorted.reduce((s, c) => s + c.total, 0);
+
+  if (sorted.length === 0) {
+    card.innerHTML = `<div class="card-title">Spending by Category</div><div class="empty-state">No spending data this period.</div>`;
+    return;
+  }
+
+  if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
+
+  card.innerHTML = `
+    <div class="card-title">Spending by Category</div>
+    <div class="donut-wrap">
+      <canvas id="cat-canvas"></canvas>
+      <div class="donut-center">
+        <div class="donut-center-label">Total</div>
+        <div class="donut-center-value">${fmt(grandTotal)}</div>
+      </div>
+    </div>
+    <div class="legend" id="cat-legend"></div>`;
+
+  categoryChart = new Chart(document.getElementById('cat-canvas'), {
+    type: 'doughnut',
+    data: {
+      labels: sorted.map(c => c.name),
+      datasets: [{ data: sorted.map(c => c.total), backgroundColor: sorted.map(c => c.color), borderWidth: 2, borderColor: '#111827', hoverOffset: 6 }],
+    },
+    options: {
+      cutout: '68%',
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ` ${fmt(ctx.raw)}  (${((ctx.raw / grandTotal) * 100).toFixed(1)}%)` }
+      }},
+    },
+  });
+
+  const legend = document.getElementById('cat-legend');
+  for (const c of sorted) {
+    const pct = ((c.total / grandTotal) * 100).toFixed(1);
+    const li = document.createElement('div');
+    li.className = 'legend-item';
+    li.innerHTML = `
+      <div class="legend-left">
+        <div class="legend-dot" style="background:${c.color}"></div>
+        <span class="legend-name">${c.name}</span>
+        <span class="legend-pct">${pct}%</span>
+      </div>
+      <span class="legend-amt">${fmt(c.total)}</span>`;
+    legend.appendChild(li);
+  }
+}
+
+// ── Comparison Chart ─────────────────────────────────────────────────────────
+async function renderComparisonChart() {
+  const card = document.getElementById('comparison-card');
+
+  const a = cmpA || { year: viewYear, month: viewMonth };
+  const b = cmpB || prevMonth(viewYear, viewMonth);
+  const keyA = `${a.year}-${String(a.month + 1).padStart(2, '0')}`;
+  const keyB = `${b.year}-${String(b.month + 1).padStart(2, '0')}`;
+
+  // Fetch any month not already in cache
+  for (const [key, mo] of [[keyA, a], [keyB, b]]) {
+    if (!compareTxnCache.has(key)) {
+      const r = monthRange(mo.year, mo.month);
+      try {
+        const res  = await fetch(`/api/transactions?start=${r.start}&end=${r.end}`);
+        const data = await res.json();
+        compareTxnCache.set(key, data.error ? [] : data.transactions);
+      } catch { compareTxnCache.set(key, []); }
+    }
+  }
+
+  const sel = selectedAccount;
+  const applyFilters = txns =>
+    (sel ? txns.filter(t => t.accountAlias === sel) : txns)
+    .filter(t => !hiddenTxnIds.has(t.id));
+
+  const txnsA = applyFilters(compareTxnCache.get(keyA) || []);
+  const txnsB = applyFilters(compareTxnCache.get(keyB) || []);
+  const labelA = `${MONTH_SHORT[a.month]} ${a.year}`;
+  const labelB = `${MONTH_SHORT[b.month]} ${b.year}`;
+
+  // Tally categories
+  const allCats = new Map();
+  const tally = (txns, slot) => {
+    for (const t of txns.filter(isSpending)) {
+      const cat = categorize(t);
+      if (!allCats.has(cat.name)) allCats.set(cat.name, { color: cat.color, a: 0, b: 0 });
+      allCats.get(cat.name)[slot] += Math.abs(t.amount);
+    }
+  };
+  tally(txnsA, 'a');
+  tally(txnsB, 'b');
+
+  const allSorted = [...allCats.entries()].sort((x, y) => (y[1].a + y[1].b) - (x[1].a + x[1].b));
+  const sorted    = allSorted.filter(([name]) => !hiddenCompareCategories.has(name));
+
+  if (comparisonChart) { comparisonChart.destroy(); comparisonChart = null; }
+
+  // Month picker options (past 24 months)
+  const makeOpts = (selKey) => {
+    const opts = [];
+    const d = new Date(today);
+    for (let i = 0; i < 24; i++) {
+      const y = d.getFullYear(), m = d.getMonth();
+      const key = `${y}-${String(m + 1).padStart(2, '0')}`;
+      opts.push(`<option value="${key}"${key === selKey ? ' selected' : ''}>${MONTH_SHORT[m]} ${y}</option>`);
+      d.setMonth(m - 1);
+    }
+    return opts.join('');
+  };
+
+  // Category pills
+  const pills = allSorted.map(([name, v]) => {
+    const hidden = hiddenCompareCategories.has(name);
+    const style  = hidden
+      ? `background:#1e293b;color:#475569;border:1px solid #334155;text-decoration:line-through`
+      : `background:${v.color}22;color:${v.color};border:1px solid ${v.color}44`;
+    return `<button class="cmp-cat-pill" style="${style}" onclick="toggleCompareCategory('${name}')">${name}</button>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="cmp-header">
+      <div class="card-title">Month over Month</div>
+      <div class="cmp-picker-row">
+        <select id="cmp-sel-a" class="cmp-month-select" onchange="setCmpMonth('a',this.value)">${makeOpts(keyA)}</select>
+        <span class="cmp-vs">vs</span>
+        <select id="cmp-sel-b" class="cmp-month-select" onchange="setCmpMonth('b',this.value)">${makeOpts(keyB)}</select>
+      </div>
+    </div>
+    <div class="cmp-cat-legend">${pills}</div>
+    <canvas id="cmp-canvas" style="max-height:320px"></canvas>`;
+
+  if (sorted.length === 0) {
+    document.getElementById('cmp-canvas').style.display = 'none';
+    return;
+  }
+
+  comparisonChart = new Chart(document.getElementById('cmp-canvas'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(([name]) => name),
+      datasets: [
+        { label: labelA, data: sorted.map(([, v]) => v.a), backgroundColor: 'rgba(248,113,113,0.85)', borderRadius: 5, borderSkipped: false },
+        { label: labelB, data: sorted.map(([, v]) => v.b), backgroundColor: 'rgba(100,116,139,0.5)',  borderRadius: 5, borderSkipped: false },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}` } },
+      },
+      scales: {
+        x: { ticks: { color: '#7a8ba0', font: { size: 11 } }, grid: { color: '#1f2d42' } },
+        y: { ticks: { color: '#7a8ba0', callback: v => '$' + v.toLocaleString() }, grid: { color: '#1f2d42' } },
+      },
+    },
+  });
+}
+
+// ── Transactions Table ────────────────────────────────────────────────────────
+function applyFilter(txns, filter) {
+  if (filter === 'spend')    return txns.filter(isSpending);
+  if (filter === 'income')   return txns.filter(isIncome);
+  if (filter === 'transfer') return txns.filter(t => t.isInternalTransfer);
+  return txns;
+}
+
+function populateCategoryDropdown(txns) {
+  const sel = document.getElementById('tx-cat-filter');
+  if (!sel) return;
+  const seen = new Set();
+  txns.forEach(t => seen.add(categorize(t).name));
+  const sorted = [...seen].sort();
+  const current = sel.value;
+  sel.innerHTML = `<option value="">All Categories</option>` +
+    sorted.map(n => `<option value="${n}" ${n === current ? 'selected' : ''}>${n}</option>`).join('');
+}
+
+function renderTransactions(txns) {
+  const wrap = document.getElementById('tx-body-wrap');
+
+  // Populate category dropdown from current txn set
+  populateCategoryDropdown(txns);
+
+  // Apply date and category filters
+  let filtered = txns;
+  if (txDateFrom)       filtered = filtered.filter(t => t.date >= txDateFrom);
+  if (txDateTo)         filtered = filtered.filter(t => t.date <= txDateTo);
+  if (txCategoryFilter) filtered = filtered.filter(t => categorize(t).name === txCategoryFilter);
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">No transactions match the current filters.</div>`;
+    return;
+  }
+
+  // Totals across ALL filtered rows (not just current page)
+  const totalOut = filtered.filter(isSpending).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const totalIn  = filtered.filter(isIncome).reduce((s, t) => s + t.amount, 0);
+  const net      = totalIn - totalOut;
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / txPageSize));
+  const safePage   = Math.min(txPage, totalPages - 1);
+  const pageStart  = safePage * txPageSize;
+  const pageTxns   = filtered.slice(pageStart, pageStart + txPageSize);
+
+  const rows = pageTxns.map(t => {
+    const cat       = categorize(t);
+    const merchant  = t.counterparty || '';
+    const desc      = t.description || '';
+    const isNeg     = t.amount < 0;
+    const dispAmt   = `${isNeg ? '-' : '+'}${fmt(t.amount)}`;
+    const amtClass  = isNeg ? 'neg' : 'pos';
+    const transfer  = t.isInternalTransfer ? `<span class="tag-transfer">transfer</span>` : '';
+    const shortDesc = merchant && merchant !== desc ? desc : '';
+
+    return `<tr>
+      <td style="color:var(--muted);font-variant-numeric:tabular-nums">${fmtDate(t.date)}</td>
+      <td style="color:var(--muted);font-size:12px">${t.accountAlias}</td>
+      <td>
+        <div class="tx-merchant">${merchant || desc}${transfer}</div>
+        ${shortDesc ? `<div class="tx-desc">${shortDesc}</div>` : ''}
+      </td>
+      <td>
+        <span class="cat-badge" style="background:${cat.color}22;color:${cat.color}">
+          <span class="cat-dot" style="background:${cat.color}"></span>${cat.name}
+        </span>
+      </td>
+      <td class="amount ${amtClass}">${dispAmt}</td>
+      <td class="tx-hide-col"><button class="tx-hide-btn" onclick="hideTxn('${t.id}')" title="Hide from charts">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  const hiddenCount = hiddenTxnIds.size;
+  const restoreLink = hiddenCount > 0
+    ? `<button class="tx-restore-btn" onclick="restoreAllTxns()">↩ Restore ${hiddenCount} hidden</button>`
+    : '';
+
+  const pageInfo = totalPages > 1
+    ? `<div class="tx-pagination">
+        <button class="tx-page-btn" onclick="setTxPage(${safePage - 1})" ${safePage === 0 ? 'disabled' : ''}>&#8249;</button>
+        <span class="tx-page-info">${safePage + 1} / ${totalPages}</span>
+        <button class="tx-page-btn" onclick="setTxPage(${safePage + 1})" ${safePage >= totalPages - 1 ? 'disabled' : ''}>&#8250;</button>
+      </div>`
+    : '';
+
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Date</th><th>Account</th><th>Merchant</th><th>Category</th><th>Amount</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="tx-summary">
+      <div>
+        <strong>${filtered.length}</strong> of ${txns.length} transactions ${restoreLink}
+      </div>
+      <div>Out: <strong style="color:var(--red)">${fmt(totalOut)}</strong></div>
+      <div>In: <strong style="color:var(--green)">${fmt(totalIn)}</strong></div>
+      <div>Net: <strong style="color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">
+        ${net >= 0 ? '+' : '-'}${fmt(net)}</strong></div>
+      <div class="tx-pagesize-wrap">
+        Rows:
+        <button class="tx-pagesize-btn ${txPageSize === 10 ? 'active' : ''}" onclick="setTxPageSize(10)">10</button>
+        <button class="tx-pagesize-btn ${txPageSize === 20 ? 'active' : ''}" onclick="setTxPageSize(20)">20</button>
+      </div>
+      ${pageInfo}
+    </div>`;
+}
+
+// ── Account selector ─────────────────────────────────────────────────────────
+function renderAccountBar(accounts) {
+  const bar = document.getElementById('account-bar');
+  const pills = [
+    `<span class="acc-label">Account</span>`,
+    `<button class="acc-pill ${!selectedAccount ? 'active' : ''}" onclick="setAccountFilter(null)">All Accounts</button>`,
+    ...accounts.map(a => {
+      const alias = a.alias.replace(/'/g, "\\'");
+      const type  = a.isCredit ? 'Credit' : 'Debit';
+      return `<button class="acc-pill ${selectedAccount === a.alias ? 'active' : ''}" onclick="setAccountFilter('${alias}')">
+        ${a.alias}<span class="acc-badge">${type}</span>
+      </button>`;
+    }),
+  ];
+  bar.innerHTML = pills.join('');
+}
+
+function setAccountFilter(alias) {
+  selectedAccount = alias;
+  if (!alias) { chatScopeActive = false; }
+  if (liquiditySnapshot) renderAccountBar(liquiditySnapshot.accounts);
+  updateScopeBar();
+  applyAccountFilter();
+}
+
+function toggleScope() {
+  chatScopeActive = !chatScopeActive;
+  document.getElementById('scope-toggle').classList.toggle('active', chatScopeActive);
+}
+
+// ── Transaction filters & pagination ─────────────────────────────────────────
+function setTxDateFrom(v) { txDateFrom = v; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
+function setTxDateTo(v)   { txDateTo   = v; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
+function setTxCategory(v) { txCategoryFilter = v; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
+function setTxPage(p)     { txPage = p; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
+function setTxPageSize(n) { txPageSize = n; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
+function clearTxFilters() {
+  txDateFrom = ''; txDateTo = ''; txCategoryFilter = ''; txPage = 0;
+  const f = document.getElementById('tx-date-from'); if (f) f.value = '';
+  const t = document.getElementById('tx-date-to');   if (t) t.value = '';
+  const c = document.getElementById('tx-cat-filter');if (c) c.value = '';
+  renderTransactions(applyFilter(allViewTxns, activeFilter));
+}
+
+// ── Transaction hide / restore ────────────────────────────────────────────────
+function hideTxn(id) {
+  hiddenTxnIds.add(id);
+  applyAccountFilter();
+}
+
+function restoreAllTxns() {
+  hiddenTxnIds.clear();
+  applyAccountFilter();
+}
+
+// ── Comparison chart category toggle ─────────────────────────────────────────
+function toggleCompareCategory(name) {
+  if (hiddenCompareCategories.has(name)) hiddenCompareCategories.delete(name);
+  else hiddenCompareCategories.add(name);
+  renderComparisonChart();
+}
+
+async function setCmpMonth(which, yyyymm) {
+  const [y, m] = yyyymm.split('-').map(Number);
+  if (which === 'a') cmpA = { year: y, month: m - 1 };
+  else               cmpB = { year: y, month: m - 1 };
+  hiddenCompareCategories.clear();
+  await renderComparisonChart();
+}
+
+function updateScopeBar() {
+  const bar = document.getElementById('chat-scope-bar');
+  const label = document.getElementById('scope-label');
+  if (selectedAccount) {
+    bar.classList.add('visible');
+    label.textContent = selectedAccount + ' only';
+  } else {
+    bar.classList.remove('visible');
+    chatScopeActive = false;
+    document.getElementById('scope-toggle').classList.remove('active');
+  }
+}
+
+function applyAccountFilter() {
+  const p   = prevMonth(viewYear, viewMonth);
+  const sel = selectedAccount;
+
+  const cur = (sel ? currentTxns.filter(t => t.accountAlias === sel)  : currentTxns).filter(t => !hiddenTxnIds.has(t.id));
+  const prv = (sel ? prevTxns.filter(t => t.accountAlias === sel)      : prevTxns).filter(t => !hiddenTxnIds.has(t.id));
+  const all = (sel ? allCachedTxns.filter(t => t.accountAlias === sel) : allCachedTxns).filter(t => !hiddenTxnIds.has(t.id));
+  // Liquidity KPI: single account balance or combined net
+  if (sel && liquiditySnapshot) {
+    const acc = liquiditySnapshot.accounts.find(a => a.alias === sel);
+    if (acc) {
+      const el  = document.getElementById('kpi-liquidity');
+      const val = acc.isCredit ? Math.abs(acc.ledger) : acc.available;
+      el.innerHTML = `
+        <div class="kpi-label">${acc.alias}</div>
+        <div class="kpi-value" style="color:${acc.isCredit ? 'var(--red)' : 'var(--accent)'}">${acc.isCredit ? '-' : ''}${fmt(val)}</div>
+        <div class="kpi-delta"><span class="neutral">${acc.isCredit ? 'balance owed' : 'available'}</span></div>`;
+    }
+  } else if (liquiditySnapshot) {
+    // Re-render combined (without calling renderAccountBar again)
+    const data = liquiditySnapshot;
+    const el   = document.getElementById('kpi-liquidity');
+    const accountLines = data.accounts.map(a =>
+      `<span style="color:var(--muted)">${a.alias}:</span> ${a.isCredit ? '<span style="color:var(--red)">-' + fmt(Math.abs(a.ledger)) + '</span>' : fmt(a.available)}`
+    ).join('<br/>');
+    el.innerHTML = `
+      <div class="kpi-label">Net Liquidity</div>
+      <div class="kpi-value" style="color:var(--accent)">${fmt(data.netLiquidity)}</div>
+      <div class="kpi-delta" style="flex-direction:column;align-items:flex-start;gap:2px;margin-top:6px;font-size:11px">
+        ${accountLines}
+      </div>`;
+  }
+
+  renderSpendKPI(cur, prv, p.month);
+  renderIncomeKPI(cur, prv);
+  renderBurnKPI(computeBurnRate(all));
+  renderCategoryChart(cur);
+  renderComparisonChart();
+  allViewTxns = cur;
+  renderTransactions(applyFilter(cur, activeFilter));
+}
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+function navigate(dir) {
+  viewMonth += dir;
+  if (viewMonth > 11) { viewMonth = 0;  viewYear++; }
+  if (viewMonth < 0)  { viewMonth = 11; viewYear--; }
+  hiddenTxnIds.clear();
+  hiddenCompareCategories.clear();
+  cmpA = null; cmpB = null;
+  txDateFrom = ''; txDateTo = ''; txCategoryFilter = ''; txPage = 0;
+  loadAllData();
+}
+
+function setFilter(filter, btn) {
+  activeFilter = filter;
+  txPage = 0;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTransactions(applyFilter(allViewTxns, filter));
+}
+
+// ── Collapsible sections ──────────────────────────────────────────────────────
+function toggleSection(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+refreshAll();
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+let liquiditySnapshot = null; // captured after loadLiquidity
+
+function toggleChat() {
+  document.getElementById('chat-section').classList.toggle('open');
+}
+
+function askSuggestion(el) {
+  document.getElementById('chat-input').value = el.textContent;
+  sendChat();
+}
+
+function buildFinancialContext() {
+  const monthName = `${MONTH_NAMES[viewMonth]} ${viewYear}`;
+  const spend  = totalSpend(currentTxns);
+  const income = totalIncome(currentTxns);
+
+  // Category breakdown
+  const tally = new Map();
+  for (const t of currentTxns.filter(isSpending)) {
+    const cat = categorize(t);
+    tally.set(cat.name, (tally.get(cat.name) || 0) + Math.abs(t.amount));
+  }
+  const cats = [...tally.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([n, v]) => `  - ${n}: $${v.toFixed(2)}`).join('\n');
+
+  // Top 10 spending transactions
+  const topTxns = currentTxns
+    .filter(isSpending)
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 10)
+    .map(t => `  - ${t.date} | ${t.counterparty || t.description} | $${Math.abs(t.amount).toFixed(2)}`)
+    .join('\n');
+
+  let ctx = `Today: ${toISO(today)}\n\n`;
+
+  if (liquiditySnapshot) {
+    ctx += `NET LIQUIDITY: $${liquiditySnapshot.netLiquidity.toFixed(2)}\n`;
+    ctx += liquiditySnapshot.accounts.map(a =>
+      `  - ${a.alias}: ${a.isCredit ? '-$' + Math.abs(a.ledger).toFixed(2) + ' (credit owed)' : '$' + a.available.toFixed(2) + ' (available)'}`
+    ).join('\n') + '\n\n';
+  }
+
+  ctx += `${monthName.toUpperCase()} SPEND: $${spend.toFixed(2)}\n`;
+  ctx += `${monthName.toUpperCase()} INCOME: $${income.toFixed(2)}\n\n`;
+  ctx += `CATEGORY BREAKDOWN (${monthName}):\n${cats || '  (none)'}\n\n`;
+  ctx += `TOP SPENDING TRANSACTIONS (${monthName}):\n${topTxns || '  (none)'}`;
+  return ctx;
+}
+
+function addBubble(role, text) {
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+
+  const msgs = document.getElementById('chat-messages');
+  const el = document.createElement('div');
+  el.className = `chat-bubble ${role}${role === 'assistant' && !text ? ' thinking' : ''}`;
+  el.textContent = text;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}
+
+async function sendChat() {
+  const input  = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send');
+  const question = input.value.trim();
+  if (!question || sendBtn.disabled) return;
+
+  input.value = '';
+  sendBtn.disabled = true;
+
+  addBubble('user', question);
+  const assistantEl = addBubble('assistant', '');
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, accountScope: chatScopeActive ? selectedAccount : null }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      assistantEl.classList.remove('thinking');
+      assistantEl.textContent = `Error: ${err.error}`;
+      return;
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let firstChunk = true;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') break;
+        const { text } = JSON.parse(payload);
+        if (firstChunk) { assistantEl.classList.remove('thinking'); firstChunk = false; }
+        assistantEl.textContent += text;
+        document.getElementById('chat-messages').scrollTop = 999999;
+      }
+    }
+  } catch (e) {
+    assistantEl.classList.remove('thinking');
+    assistantEl.textContent = `Network error: ${e.message}`;
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+</script>
+</body>
+</html>
