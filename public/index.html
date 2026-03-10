@@ -87,6 +87,19 @@
     }
     .btn-logout:hover { color: var(--red); border-color: var(--red); }
 
+    /* ── Demo banner ── */
+    .demo-banner {
+      display: none;
+      background: #1c1a05;
+      border-bottom: 1px solid #78350f;
+      color: #fbbf24;
+      font-size: 12px;
+      text-align: center;
+      padding: 7px 16px;
+      letter-spacing: 0.02em;
+    }
+    .demo-banner.visible { display: block; }
+
     /* ── Main layout ── */
     main { max-width: 1400px; margin: 0 auto; padding: 28px 32px; }
 
@@ -811,6 +824,10 @@
 </head>
 <body>
 
+<div class="demo-banner" id="demo-banner">
+  Demo mode — sample data only. No real bank accounts are connected.
+</div>
+
 <header>
   <div>
     <div class="logo"><span class="logo-icon">🍣</span> Sushi-Vault</div>
@@ -1108,6 +1125,11 @@ function computeBurnRate(allTxns) {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.getElementById('header-date').textContent = today.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+
+// Show demo banner if the logged-in user is the demo account
+fetch('/api/me').then(r => r.json()).then(me => {
+  if (me.isDemo) document.getElementById('demo-banner').classList.add('visible');
+}).catch(() => {});
 
 async function refreshAll() {
   const btn = document.getElementById('btn-refresh');

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import Anthropic from '@anthropic-ai/sdk';
 import cron from 'node-cron';
 import { getAccounts, getBalance } from './teller.js';
+import { isDemoUser, getMockLiquidity, getMockTransactions } from './mock-data.js';
 import { getTaggedTransactions } from './tools/transactions.js';
 import { setChatCategory, buildReport, renderHtml, sendEmail, SCHEDULES, isBiweeklyWeek } from './reporter.js';
 
@@ -103,7 +104,7 @@ async function handleOAuth(req, res, url) {
     const user = await userRes.json();
     const email = (user.email || '').toLowerCase();
 
-    if (!ALLOWED_EMAILS.includes(email)) {
+    if (!ALLOWED_EMAILS.includes(email) && !isDemoUser(email)) {
       res.writeHead(403);
       res.end(`Access denied for ${email}. Contact Hayson to be added.`);
       return true;
@@ -468,6 +469,9 @@ async function requestHandler(req, res) {
     if (!requireAuth(req, res)) return;
 
     if (url.pathname === '/api/liquidity') {
+      const sess = getSession(req);
+      if (isDemoUser(sess?.email)) return jsonRes(res, getMockLiquidity());
+
       // Cached — 2 Teller calls (accounts + balance per account)
       const data = await withCache('liquidity', async () => {
         const accounts = await getAccounts();
@@ -492,10 +496,13 @@ async function requestHandler(req, res) {
       }
 
     } else if (url.pathname === '/api/transactions') {
-      // Month-keyed disk cache — each calendar month is cached independently.
-      // Historical months (>3 months old) refresh weekly; current month every 5 min.
       const start = url.searchParams.get('start') || undefined;
       const end   = url.searchParams.get('end')   || undefined;
+      const sess2 = getSession(req);
+      if (isDemoUser(sess2?.email)) {
+        return jsonRes(res, { transactions: getMockTransactions({ startDate: start, endDate: end }) });
+      }
+
       let txns  = await getTxnsForRange(start, end);
       const limits = allowedAliases(req);
       if (limits) txns = txns.filter(t => limits.includes(t.accountAlias));
@@ -526,6 +533,11 @@ async function requestHandler(req, res) {
       const html    = renderHtml(report);
       await sendEmail(`[TEST] ${schedule.label} — ${startDate} → ${endDate}`, html);
       jsonRes(res, { ok: true, account: schedule.account, startDate, endDate, txnCount: report.txnCount, totalSpend: report.totalSpend });
+
+    } else if (url.pathname === '/api/me') {
+      const sess = getSession(req);
+      if (!sess) return jsonRes(res, { error: 'Unauthorized' }, 401);
+      jsonRes(res, { email: sess.email, isDemo: isDemoUser(sess.email) });
 
     } else if (url.pathname === '/api/cache/clear') {
       const size = CACHE.size + (historyCache?.txns?.length || 0);
@@ -559,21 +571,28 @@ async function requestHandler(req, res) {
       const wideStart = twelveMonthsAgo.toISOString().split('T')[0];
       const wideEnd   = today.toISOString().split('T')[0];
 
-      const [liquidity, chatTxns] = await Promise.all([
-        withCache('liquidity', async () => {
-          const accounts = await getAccounts();
-          const withBal = await Promise.all(accounts.map(async a => {
-            const b = await getBalance(a.id);
-            return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
-          }));
-          const cash   = withBal.filter(a => !a.isCredit);
-          const credit = withBal.filter(a => a.isCredit);
-          const totalCash = cash.reduce((s, a) => s + a.available, 0);
-          const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
-          return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
-        }),
-        getTxnsForRange(wideStart, wideEnd),
-      ]);
+      const sess3 = getSession(req);
+      let liquidity, chatTxns;
+      if (isDemoUser(sess3?.email)) {
+        liquidity = getMockLiquidity();
+        chatTxns  = getMockTransactions({ startDate: wideStart, endDate: wideEnd });
+      } else {
+        [liquidity, chatTxns] = await Promise.all([
+          withCache('liquidity', async () => {
+            const accounts = await getAccounts();
+            const withBal = await Promise.all(accounts.map(async a => {
+              const b = await getBalance(a.id);
+              return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
+            }));
+            const cash   = withBal.filter(a => !a.isCredit);
+            const credit = withBal.filter(a => a.isCredit);
+            const totalCash = cash.reduce((s, a) => s + a.available, 0);
+            const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
+            return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
+          }),
+          getTxnsForRange(wideStart, wideEnd),
+        ]);
+      }
       const txnData = { transactions: chatTxns };
 
       // Apply per-user account restrictions first, then honour any UI accountScope.
