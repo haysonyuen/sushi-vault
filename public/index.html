@@ -73,6 +73,19 @@
     }
     .btn-refresh:hover { background: var(--border); }
     .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-logout {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      text-decoration: none;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-logout:hover { color: var(--red); border-color: var(--red); }
 
     /* ── Main layout ── */
     main { max-width: 1400px; margin: 0 auto; padding: 28px 32px; }
@@ -143,14 +156,17 @@
       display: grid;
       grid-template-columns: 380px 1fr;
       gap: 16px;
+      /* Fixed height so the transaction section below never shifts */
+      height: 460px;
     }
-    @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; height: auto; } }
 
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
+      overflow: hidden;
     }
     .card-title {
       font-size: 13px;
@@ -228,7 +244,8 @@
     }
     .btn-nav:hover { background: var(--border); }
 
-    .filter-tabs { display: flex; gap: 6px; }
+    .filter-tabs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .filter-tabs .tx-filter-select { height: 30px; font-size: 12px; }
     .filter-tab {
       background: transparent;
       border: 1px solid var(--border);
@@ -726,6 +743,70 @@
     }
     .section-wrap.collapsed .section-chevron { transform: rotate(-90deg); }
     .section-wrap.collapsed .section-body { display: none; }
+
+    /* ══ MOBILE (≤ 640px) ══════════════════════════════════════════════════ */
+    @media (max-width: 640px) {
+
+      /* Header: one tight row */
+      header { padding: 10px 16px; gap: 8px; }
+      .logo { font-size: 15px; gap: 8px; }
+      .logo-icon { font-size: 18px; }
+      .logo-sub { display: none; }
+      .header-date { display: none; }
+      .header-right { gap: 8px; }
+      .btn-refresh, .btn-logout { padding: 6px 10px; font-size: 12px; }
+
+      /* Account bar sticks below the shorter header */
+      .account-bar-wrap { padding: 8px 16px; top: 53px; }
+
+      /* Main content: less horizontal padding */
+      main { padding: 14px 16px; }
+
+      /* KPI: always 2 columns */
+      .kpi-row { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+      .kpi-card { padding: 14px 16px; }
+      .kpi-value { font-size: 20px; }
+      .kpi-label { font-size: 10px; margin-bottom: 6px; }
+      .kpi-delta { font-size: 11px; }
+
+      /* Cards */
+      .card { padding: 16px; }
+      .charts-row { gap: 12px; }
+
+      /* Transaction header */
+      .tx-header { padding: 12px 16px 10px; gap: 8px; }
+      .tx-header-left { flex-wrap: wrap; gap: 8px; }
+      .month-nav span { min-width: 90px; font-size: 13px; }
+
+      /* Transaction table:
+         Col 1 = Date, Col 2 = Account, Col 6 = hide button — hide on mobile.
+         Keep: Merchant (3), Category (4), Amount (5) */
+      thead th:nth-child(1), thead th:nth-child(2), thead th:nth-child(6),
+      tbody td:nth-child(1), tbody td:nth-child(2), tbody td:nth-child(6) {
+        display: none;
+      }
+      thead th { padding: 8px 10px; font-size: 10px; }
+      tbody td { padding: 11px 10px; }
+      .tx-desc { max-width: 160px; }
+      .cat-badge { font-size: 10px; padding: 2px 7px; }
+
+      /* Summary bar */
+      .tx-summary { padding: 10px 16px; flex-wrap: wrap; gap: 6px; font-size: 11px; }
+
+      /* Pagination: compact */
+      .tx-pagination { padding: 8px 0 0; }
+      .tx-page-info { font-size: 11px; }
+      .tx-pagesize-wrap { display: none; }
+
+      /* Chat */
+      .chat-input-row { padding: 10px 14px; gap: 8px; }
+      .chat-messages { height: 220px; padding: 12px 16px; }
+      .chat-send { padding: 9px 14px; }
+
+      /* Comparison chart: reduce category pill font */
+      .cmp-cat-pill { font-size: 10px; padding: 2px 8px; }
+      .cmp-picker-row { flex-wrap: wrap; gap: 6px; }
+    }
   </style>
 </head>
 <body>
@@ -738,6 +819,7 @@
   <div class="header-right">
     <span class="header-date" id="header-date"></span>
     <button class="btn-refresh" id="btn-refresh" onclick="refreshAll()">↻ Refresh</button>
+    <a class="btn-logout" href="/auth/logout">Sign out</a>
   </div>
 </header>
 
@@ -820,24 +902,10 @@
             <button class="filter-tab" onclick="setFilter('spend', this)">Spending</button>
             <button class="filter-tab" onclick="setFilter('income', this)">Income</button>
             <button class="filter-tab" onclick="setFilter('transfer', this)">Transfers</button>
-          </div>
-        </div>
-        <div class="tx-filters" id="tx-filters">
-          <div class="tx-filter-group">
-            <label class="tx-filter-label">From</label>
-            <input type="date" id="tx-date-from" class="tx-filter-input" onchange="setTxDateFrom(this.value)">
-          </div>
-          <div class="tx-filter-group">
-            <label class="tx-filter-label">To</label>
-            <input type="date" id="tx-date-to" class="tx-filter-input" onchange="setTxDateTo(this.value)">
-          </div>
-          <div class="tx-filter-group">
-            <label class="tx-filter-label">Category</label>
             <select id="tx-cat-filter" class="tx-filter-select" onchange="setTxCategory(this.value)">
               <option value="">All Categories</option>
             </select>
           </div>
-          <button class="tx-filter-clear" onclick="clearTxFilters()">Clear</button>
         </div>
         <div id="tx-body-wrap">
           <div class="loading-state"><span class="spinner"></span>Loading transactions...</div>
@@ -980,8 +1048,6 @@ let cmpB = null; // {year, month} — null = prev month
 let compareTxnCache = new Map(); // 'YYYY-MM' → raw txns[]
 let txPageSize       = 20;   // rows per page: 10 or 20
 let txPage           = 0;    // current page (0-indexed)
-let txDateFrom       = '';   // date filter start (YYYY-MM-DD)
-let txDateTo         = '';   // date filter end (YYYY-MM-DD)
 let txCategoryFilter = '';   // category name filter or '' for all
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1382,10 +1448,8 @@ function renderTransactions(txns) {
   // Populate category dropdown from current txn set
   populateCategoryDropdown(txns);
 
-  // Apply date and category filters
+  // Apply category filter
   let filtered = txns;
-  if (txDateFrom)       filtered = filtered.filter(t => t.date >= txDateFrom);
-  if (txDateTo)         filtered = filtered.filter(t => t.date <= txDateTo);
   if (txCategoryFilter) filtered = filtered.filter(t => categorize(t).name === txCategoryFilter);
 
   if (filtered.length === 0) {
@@ -1470,10 +1534,18 @@ function renderTransactions(txns) {
 
 // ── Account selector ─────────────────────────────────────────────────────────
 function renderAccountBar(accounts) {
+  // Single-account users: skip "All Accounts" and lock to that account.
+  if (accounts.length === 1 && selectedAccount !== accounts[0].alias) {
+    selectedAccount = accounts[0].alias;
+  }
+
   const bar = document.getElementById('account-bar');
   const pills = [
     `<span class="acc-label">Account</span>`,
-    `<button class="acc-pill ${!selectedAccount ? 'active' : ''}" onclick="setAccountFilter(null)">All Accounts</button>`,
+    // Hide "All Accounts" when user only has access to one account.
+    ...(accounts.length > 1
+      ? [`<button class="acc-pill ${!selectedAccount ? 'active' : ''}" onclick="setAccountFilter(null)">All Accounts</button>`]
+      : []),
     ...accounts.map(a => {
       const alias = a.alias.replace(/'/g, "\\'");
       const type  = a.isCredit ? 'Credit' : 'Debit';
@@ -1499,16 +1571,12 @@ function toggleScope() {
 }
 
 // ── Transaction filters & pagination ─────────────────────────────────────────
-function setTxDateFrom(v) { txDateFrom = v; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
-function setTxDateTo(v)   { txDateTo   = v; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
 function setTxCategory(v) { txCategoryFilter = v; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
 function setTxPage(p)     { txPage = p; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
 function setTxPageSize(n) { txPageSize = n; txPage = 0; renderTransactions(applyFilter(allViewTxns, activeFilter)); }
 function clearTxFilters() {
-  txDateFrom = ''; txDateTo = ''; txCategoryFilter = ''; txPage = 0;
-  const f = document.getElementById('tx-date-from'); if (f) f.value = '';
-  const t = document.getElementById('tx-date-to');   if (t) t.value = '';
-  const c = document.getElementById('tx-cat-filter');if (c) c.value = '';
+  txCategoryFilter = ''; txPage = 0;
+  const c = document.getElementById('tx-cat-filter'); if (c) c.value = '';
   renderTransactions(applyFilter(allViewTxns, activeFilter));
 }
 
@@ -1601,7 +1669,7 @@ function navigate(dir) {
   hiddenTxnIds.clear();
   hiddenCompareCategories.clear();
   cmpA = null; cmpB = null;
-  txDateFrom = ''; txDateTo = ''; txCategoryFilter = ''; txPage = 0;
+  txCategoryFilter = ''; txPage = 0;
   loadAllData();
 }
 

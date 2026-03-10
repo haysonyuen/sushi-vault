@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -18,6 +19,19 @@ const PORT = process.env.UI_PORT ?? 3000;
 const SESSIONS = new Map(); // token → { email, expires }
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
+
+// Per-user account restrictions: email → array of allowed account aliases.
+// null (or missing key) means unrestricted — sees all accounts.
+const USER_ACCOUNT_LIMITS = {
+  'favouritemie@gmail.com': ['Chase Freedom'],
+};
+
+// Returns null (no restriction) or an array of allowed aliases for the session user.
+function allowedAliases(req) {
+  const sess = getSession(req);
+  if (!sess) return null;
+  return USER_ACCOUNT_LIMITS[sess.email] ?? null;
+}
 
 function parseCookies(req) {
   const cookies = {};
@@ -46,7 +60,7 @@ function requireAuth(req, res) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Unauthorized' }));
   } else {
-    res.writeHead(302, { Location: '/auth/google' });
+    res.writeHead(302, { Location: '/login' });
     res.end();
   }
   return false;
@@ -101,7 +115,7 @@ async function handleOAuth(req, res, url) {
     console.log(`[auth] Login: ${email}`);
     res.writeHead(302, {
       Location: '/',
-      'Set-Cookie': `sushi_session=${token}; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}; Path=/`,
+      'Set-Cookie': `sushi_session=${token}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}; Path=/`,
     });
     res.end();
     return true;
@@ -444,7 +458,7 @@ function serveStatic(res, urlPath) {
 }
 
 // --- Request router ---
-const server = http.createServer(async (req, res) => {
+async function requestHandler(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   try {
@@ -467,14 +481,24 @@ const server = http.createServer(async (req, res) => {
         const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
         return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
       });
-      jsonRes(res, data);
+      const limits = allowedAliases(req);
+      if (limits) {
+        const accts = data.accounts.filter(a => limits.includes(a.alias));
+        const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
+        const totalOwed = accts.filter(a => a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
+        jsonRes(res, { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed });
+      } else {
+        jsonRes(res, data);
+      }
 
     } else if (url.pathname === '/api/transactions') {
       // Month-keyed disk cache — each calendar month is cached independently.
       // Historical months (>3 months old) refresh weekly; current month every 5 min.
       const start = url.searchParams.get('start') || undefined;
       const end   = url.searchParams.get('end')   || undefined;
-      const txns  = await getTxnsForRange(start, end);
+      let txns  = await getTxnsForRange(start, end);
+      const limits = allowedAliases(req);
+      if (limits) txns = txns.filter(t => limits.includes(t.accountAlias));
       jsonRes(res, { transactions: txns });
 
     } else if (url.pathname === '/api/email/test' && req.method === 'POST') {
@@ -552,12 +576,21 @@ const server = http.createServer(async (req, res) => {
       ]);
       const txnData = { transactions: chatTxns };
 
-      // If client sent an accountScope, narrow both transactions and liquidity to that account.
-      let scopedTxns = txnData.transactions;
+      // Apply per-user account restrictions first, then honour any UI accountScope.
+      const chatLimits = allowedAliases(req);
+      let scopedTxns = chatLimits
+        ? txnData.transactions.filter(t => chatLimits.includes(t.accountAlias))
+        : txnData.transactions;
       let scopedLiquidity = liquidity;
+      if (chatLimits) {
+        const accts = liquidity.accounts.filter(a => chatLimits.includes(a.alias));
+        const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
+        const totalOwed = accts.filter(a => a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
+        scopedLiquidity = { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
+      }
       if (accountScope) {
-        scopedTxns = txnData.transactions.filter(t => t.accountAlias === accountScope);
-        const scopedAccounts = liquidity.accounts.filter(a => a.alias === accountScope);
+        scopedTxns = scopedTxns.filter(t => t.accountAlias === accountScope);
+        const scopedAccounts = scopedLiquidity.accounts.filter(a => a.alias === accountScope);
         const totalCash = scopedAccounts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
         const totalOwed = scopedAccounts.filter(a => a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
         scopedLiquidity = { accounts: scopedAccounts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
@@ -591,12 +624,15 @@ const server = http.createServer(async (req, res) => {
       res.end();
 
     } else {
-      serveStatic(res, url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
+      const filePath = url.pathname === '/' ? 'index.html'
+        : url.pathname === '/login' ? 'login.html'
+        : url.pathname.slice(1);
+      serveStatic(res, filePath);
     }
   } catch (err) {
     jsonRes(res, { error: err.message }, 500);
   }
-});
+}
 
 // Give reporter.js access to the categorizer so email reports match the dashboard
 setChatCategory(chatCategory);
@@ -629,10 +665,35 @@ for (const schedule of SCHEDULES) {
   console.log(`[cron] Scheduled: ${schedule.label} (${schedule.cronExpr})`);
 }
 
-server.listen(PORT, () => {
-  console.log(`\nSushi-Vault UI  →  http://localhost:${PORT}`);
-  console.log(`Clear cache: GET /api/cache/clear`);
-  console.log(`Test email:  POST /api/email/test  {"account":"Chase"}\n`);
-  // Pre-warm historical months in background — does not block the server
-  prewarmHistory().catch(e => console.error('[prewarm] Fatal:', e.message));
-});
+// ── Start server (HTTPS if certs present, else HTTP) ──────────────────────
+const SSL_CERT = process.env.SSL_CERT;
+const SSL_KEY  = process.env.SSL_KEY;
+
+let server;
+if (SSL_CERT && SSL_KEY && fs.existsSync(SSL_CERT) && fs.existsSync(SSL_KEY)) {
+  const tlsOptions = {
+    cert: fs.readFileSync(SSL_CERT),
+    key:  fs.readFileSync(SSL_KEY),
+  };
+  server = https.createServer(tlsOptions, requestHandler);
+  server.listen(PORT, () => {
+    console.log(`\nSushi-Vault UI  →  https://sushivault.app (port ${PORT})`);
+    console.log(`Clear cache: GET /api/cache/clear`);
+    console.log(`Test email:  POST /api/email/test  {"account":"Chase"}\n`);
+    prewarmHistory().catch(e => console.error('[prewarm] Fatal:', e.message));
+  });
+
+  // HTTP → HTTPS redirect on port 80
+  http.createServer((req, res) => {
+    res.writeHead(301, { Location: `https://sushivault.app${req.url}` });
+    res.end();
+  }).listen(80, () => console.log('[http] Redirecting port 80 → HTTPS'));
+} else {
+  server = http.createServer(requestHandler);
+  server.listen(PORT, () => {
+    console.log(`\nSushi-Vault UI  →  http://localhost:${PORT}`);
+    console.log(`Clear cache: GET /api/cache/clear`);
+    console.log(`Test email:  POST /api/email/test  {"account":"Chase"}\n`);
+    prewarmHistory().catch(e => console.error('[prewarm] Fatal:', e.message));
+  });
+}
