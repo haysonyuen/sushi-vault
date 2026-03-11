@@ -8,14 +8,15 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #0d0f14;
-      --surface:  #13161e;
-      --border:   #1f2330;
-      --text:     #e8eaf0;
-      --muted:    #6b7280;
-      --green:    #22c55e;
+      --bg:       #0a0c10;
+      --surface:  #0d1117;
+      --border:   #21262d;
+      --text:     #e6edf3;
+      --muted:    #7d8590;
+      --green:    #3fb950;
       --accent:   #6366f1;
       --accent-h: #818cf8;
+      --teal:     #34d399;
     }
 
     body {
@@ -23,74 +24,167 @@
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
+      overflow-x: hidden;
     }
 
-    .card {
-      background: var(--surface);
+    /* ── Glow background ─────────────────────────────────────── */
+    .glow {
+      position: fixed;
+      top: -200px;
+      right: -200px;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, rgba(52,211,153,0.05) 50%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-2 {
+      position: fixed;
+      bottom: -300px;
+      left: -200px;
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(52,211,153,0.1) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Nav ─────────────────────────────────────────────────── */
+    nav {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      padding: 20px 48px;
+      border-bottom: 1px solid rgba(33,38,45,0.8);
+      backdrop-filter: blur(12px);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .nav-logo span { font-size: 24px; }
+    .nav-badge {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--muted);
+      background: rgba(33,38,45,0.8);
       border: 1px solid var(--border);
       border-radius: 20px;
-      padding: 52px 48px;
-      max-width: 420px;
-      width: 100%;
-      text-align: center;
+      padding: 4px 12px;
+      letter-spacing: 0.02em;
     }
 
-    .logo {
-      font-size: 40px;
-      margin-bottom: 16px;
+    /* ── Hero ────────────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 80px 48px 100px;
+      min-height: calc(100vh - 65px);
+    }
+
+    /* ── Left column ─────────────────────────────────────────── */
+    .hero-left {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--teal);
+      background: rgba(52,211,153,0.08);
+      border: 1px solid rgba(52,211,153,0.2);
+      border-radius: 20px;
+      padding: 5px 14px;
+      margin-bottom: 28px;
+      width: fit-content;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--teal);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
 
     h1 {
-      font-size: 26px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      margin-bottom: 8px;
+      font-size: 52px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1.5px;
+      margin-bottom: 24px;
+      color: var(--text);
+    }
+    .gradient-text {
+      background: linear-gradient(135deg, var(--accent-h) 0%, var(--teal) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
 
     .tagline {
+      font-size: 17px;
       color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-      margin-bottom: 36px;
+      line-height: 1.7;
+      margin-bottom: 40px;
+      max-width: 440px;
     }
 
     .features {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      margin-bottom: 40px;
-      text-align: left;
+      gap: 14px;
+      margin-bottom: 44px;
     }
-
     .feature {
       display: flex;
       align-items: center;
       gap: 12px;
       font-size: 14px;
-      color: var(--muted);
+      color: #9ca3af;
     }
-
-    .feature-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--green);
+    .feature-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(99,102,241,0.12);
+      border: 1px solid rgba(99,102,241,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
       flex-shrink: 0;
     }
 
     .btn-google {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 12px;
-      width: 100%;
-      padding: 14px 20px;
-      background: var(--accent);
+      padding: 15px 28px;
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
       color: #fff;
       border: none;
       border-radius: 12px;
@@ -99,70 +193,279 @@
       font-family: inherit;
       cursor: pointer;
       text-decoration: none;
-      transition: background 0.15s, transform 0.1s;
+      transition: all 0.2s;
+      box-shadow: 0 0 0 0 rgba(99,102,241,0.4);
+      width: fit-content;
+      margin-bottom: 20px;
     }
-
-    .btn-google:hover  { background: var(--accent-h); }
-    .btn-google:active { transform: scale(0.98); }
-
-    .google-icon {
-      width: 20px;
-      height: 20px;
-      flex-shrink: 0;
+    .btn-google:hover {
+      background: linear-gradient(135deg, #818cf8, #6366f1);
+      box-shadow: 0 0 30px rgba(99,102,241,0.35);
+      transform: translateY(-1px);
     }
+    .btn-google:active { transform: scale(0.98) translateY(0); }
 
-    .footer {
-      margin-top: 28px;
+    .google-icon { width: 20px; height: 20px; flex-shrink: 0; }
+
+    .footer-note {
       font-size: 12px;
       color: var(--muted);
       line-height: 1.6;
     }
 
-    .footer a {
+    /* ── Right column — mockup ───────────────────────────────── */
+    .hero-right {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mockup {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow:
+        0 0 0 1px rgba(99,102,241,0.1),
+        0 32px 64px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.04);
+      transform: perspective(1200px) rotateY(-8deg) rotateX(3deg);
+      transition: transform 0.4s ease;
+    }
+    .mockup:hover {
+      transform: perspective(1200px) rotateY(-3deg) rotateX(1deg);
+    }
+
+    .mockup-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+    .mockup-title {
+      margin-left: 8px;
+      font-size: 12px;
       color: var(--muted);
-      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .mockup-accounts {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .pill {
+      font-size: 11px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: #161b22;
+    }
+    .pill.active {
+      background: rgba(99,102,241,0.15);
+      border-color: rgba(99,102,241,0.4);
+      color: var(--accent-h);
+    }
+
+    .mockup-kpis {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .kpi {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .kpi-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .kpi-value.green { color: #3fb950; }
+    .kpi-value.red   { color: #f85149; }
+    .kpi-value.white { color: var(--text); }
+    .kpi-sub {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+    .kpi-sub.up   { color: #3fb950; }
+    .kpi-sub.down { color: #f85149; }
+
+    .mockup-chart-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .chart-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 64px;
+    }
+    .bar {
+      flex: 1;
+      border-radius: 4px 4px 0 0;
+      background: rgba(99,102,241,0.3);
+      border: 1px solid rgba(99,102,241,0.2);
+      transition: background 0.2s;
+    }
+    .bar.active {
+      background: rgba(99,102,241,0.7);
+      border-color: rgba(99,102,241,0.5);
+    }
+    .bar:hover { background: rgba(99,102,241,0.5); }
+
+    /* ── Mobile ──────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      nav { padding: 16px 20px; }
+      .hero {
+        grid-template-columns: 1fr;
+        padding: 48px 20px 60px;
+        gap: 0;
+        text-align: center;
+        align-items: start;
+      }
+      h1 { font-size: 36px; }
+      .hero-right { display: none; }
+      .eyebrow { margin: 0 auto 24px; }
+      .tagline { margin: 0 auto 32px; }
+      .features { align-items: flex-start; text-align: left; }
+      .btn-google { width: 100%; justify-content: center; }
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="logo">🍣</div>
-    <h1>Sushi Vault</h1>
-    <p class="tagline">Your private financial intelligence dashboard.<br/>Read-only access to your real bank data.</p>
+  <div class="glow"></div>
+  <div class="glow-2"></div>
 
-    <div class="features">
-      <div class="feature">
-        <div class="feature-dot"></div>
-        <span>Live balances across Chase &amp; Wells Fargo</span>
+  <nav>
+    <div class="nav-logo">
+      <span>🍣</span>
+      Sushi Vault
+    </div>
+    <div class="nav-badge">Private Access Only</div>
+  </nav>
+
+  <main class="hero">
+    <div class="hero-left">
+      <div class="eyebrow">Financial Intelligence</div>
+
+      <h1>Your money,<br/><span class="gradient-text">clearly visible.</span></h1>
+
+      <p class="tagline">
+        A private dashboard connecting your accounts across Chase, Wells Fargo, and other top financial institutions.
+        Real balances, AI-categorized spending, and a chat interface for your finances.
+      </p>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">💳</div>
+          <span>Live balances across Chase, Wells Fargo &amp; more top institutions</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🤖</div>
+          <span>Spending breakdown with AI categorization</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">💬</div>
+          <span>Chat with your financial data</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📧</div>
+          <span>Weekly email spending reports</span>
+        </div>
       </div>
-      <div class="feature">
-        <div class="feature-dot"></div>
-        <span>Spending breakdown with AI categorization</span>
-      </div>
-      <div class="feature">
-        <div class="feature-dot"></div>
-        <span>Chat with your financial data</span>
-      </div>
-      <div class="feature">
-        <div class="feature-dot"></div>
-        <span>Weekly email spending reports</span>
-      </div>
+
+      <a class="btn-google" href="/auth/google">
+        <svg class="google-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="rgba(255,255,255,0.8)" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="rgba(255,255,255,0.6)" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="rgba(255,255,255,0.9)" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Sign in with Google
+      </a>
+
+      <p class="footer-note">
+        Access is restricted to authorized users only.<br/>
+        Read-only · No data is stored or shared.
+      </p>
     </div>
 
-    <a class="btn-google" href="/auth/google">
-      <svg class="google-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-        <path fill="rgba(255,255,255,0.8)" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-        <path fill="rgba(255,255,255,0.6)" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-        <path fill="rgba(255,255,255,0.9)" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-      </svg>
-      Sign in with Google
-    </a>
+    <div class="hero-right">
+      <div class="mockup">
+        <div class="mockup-header">
+          <div class="dot dot-r"></div>
+          <div class="dot dot-y"></div>
+          <div class="dot dot-g"></div>
+          <span class="mockup-title">sushivault.app</span>
+        </div>
 
-    <p class="footer">
-      Access is restricted to authorized users only.<br/>
-      Read-only · No data is stored or shared.
-    </p>
-  </div>
+        <div class="mockup-accounts">
+          <div class="pill active">All Accounts</div>
+          <div class="pill">Chase Checking</div>
+          <div class="pill">Chase Freedom</div>
+          <div class="pill">WF Savings</div>
+        </div>
+
+        <div class="mockup-kpis">
+          <div class="kpi">
+            <div class="kpi-label">Net Liquidity</div>
+            <div class="kpi-value green">$24,810</div>
+            <div class="kpi-sub up">↑ $1,240 this month</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Month Spend</div>
+            <div class="kpi-value white">$3,124</div>
+            <div class="kpi-sub down">↑ 12% vs last month</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Burn Rate</div>
+            <div class="kpi-value white">$104/day</div>
+            <div class="kpi-sub">4-wk avg $91/day</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Month Income</div>
+            <div class="kpi-value green">$6,500</div>
+            <div class="kpi-sub up">Payroll · Mar 1</div>
+          </div>
+        </div>
+
+        <div class="mockup-chart-label">Spending by Category — March 2026</div>
+        <div class="chart-bars">
+          <div class="bar" style="height:30%"></div>
+          <div class="bar" style="height:55%"></div>
+          <div class="bar" style="height:45%"></div>
+          <div class="bar active" style="height:80%"></div>
+          <div class="bar" style="height:60%"></div>
+          <div class="bar" style="height:35%"></div>
+          <div class="bar" style="height:70%"></div>
+          <div class="bar" style="height:25%"></div>
+          <div class="bar" style="height:50%"></div>
+          <div class="bar" style="height:40%"></div>
+        </div>
+      </div>
+    </div>
+  </main>
 </body>
 </html>
