@@ -35,17 +35,23 @@ function persistSessions() {
 }
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
 
-// Per-user account restrictions: email → array of allowed account aliases.
-// null (or missing key) means unrestricted — sees all accounts.
+// Admins see all accounts. Add your own email here via ADMIN_EMAILS in .env.
+const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+);
+
+// Per-user account restrictions: email → array of allowed account aliases (with last4).
+// Admins are unrestricted. Users not listed here see no accounts by default.
 const USER_ACCOUNT_LIMITS = {
-  'favouritemie@gmail.com': ['Chase Freedom'],
+  'favouritemie@gmail.com': ['Chase Freedom (4844)'],
 };
 
-// Returns null (no restriction) or an array of allowed aliases for the session user.
+// Returns null (unrestricted/admin), an alias array (restricted), or [] (sees nothing).
 function allowedAliases(req) {
   const sess = getSession(req);
-  if (!sess) return null;
-  return USER_ACCOUNT_LIMITS[sess.email] ?? null;
+  if (!sess) return [];
+  if (ADMIN_EMAILS.has(sess.email)) return null;
+  return USER_ACCOUNT_LIMITS[sess.email] ?? [];
 }
 
 function parseCookies(req) {

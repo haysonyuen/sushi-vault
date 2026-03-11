@@ -4,6 +4,8 @@ import { getAlias, CREDIT_CARD_LAST4, ACCOUNT_ALIASES } from './config.js';
 
 const BASE_URL = 'https://api.teller.io';
 
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ''; }
+
 // Build the mTLS agent once at startup using cert files from .env
 function createAgent() {
   return new https.Agent({
@@ -82,19 +84,18 @@ export async function getAccounts() {
       const mapped = [];
       for (const acc of accounts) {
         const last4 = acc.last_four ?? acc.number?.slice(-4) ?? '????';
-        // Only track accounts explicitly listed in ACCOUNT_ALIASES (allowlist).
-        // Prevents unlisted Chase accounts (checking, other cards, etc.) from
-        // appearing in the dashboard when the token grants access to multiple accounts.
-        if (!ACCOUNT_ALIASES[last4]) continue;
+        const baseName = ACCOUNT_ALIASES[last4]
+          ?? `${acc.institution?.name ?? 'Unknown'} ${capitalize(acc.subtype ?? acc.type ?? 'Account')}`;
+        const alias = `${baseName} (${last4})`;
         ACCOUNT_TOKEN_MAP.set(acc.id, token); // remember which token owns this account
         mapped.push({
           id: acc.id,
-          alias: getAlias(last4),
+          alias,
           last4,
           type: acc.type,
           subtype: acc.subtype,
           institution: acc.institution?.name ?? 'Unknown',
-          isCredit: CREDIT_CARD_LAST4.has(last4),
+          isCredit: acc.type === 'credit' || CREDIT_CARD_LAST4.has(last4),
           currency: acc.currency ?? 'USD',
         });
       }
