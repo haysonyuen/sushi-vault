@@ -43,7 +43,8 @@ const ADMIN_EMAILS = new Set(
 // Per-user account restrictions: email → array of allowed account aliases (with last4).
 // Admins are unrestricted. Users not listed here see no accounts by default.
 const USER_ACCOUNT_LIMITS = {
-  'favouritemie@gmail.com': ['Chase Freedom (4844)'],
+  'haysonyuenyyh@gmail.com': ['Chase Freedom (4844)'],
+  'favouritemie@gmail.com':  ['Chase Freedom (4844)'],
 };
 
 // Returns null (unrestricted/admin), an alias array (restricted), or [] (sees nothing).
