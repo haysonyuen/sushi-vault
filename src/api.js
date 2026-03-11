@@ -17,8 +17,22 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const PORT = process.env.UI_PORT ?? 3000;
 
 // ── Google OAuth + session auth ────────────────────────────────────────────
-const SESSIONS = new Map(); // token → { email, expires }
+const SESSION_FILE = path.join(__dirname, '..', '.sessions.json');
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Load sessions from disk so restarts don't log users out
+const SESSIONS = (() => {
+  try {
+    const raw = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+    const now = Date.now();
+    // Drop already-expired entries on load
+    return new Map(Object.entries(raw).filter(([, s]) => s.expires > now));
+  } catch { return new Map(); }
+})();
+
+function persistSessions() {
+  try { fs.writeFileSync(SESSION_FILE, JSON.stringify(Object.fromEntries(SESSIONS))); } catch {}
+}
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
 
 // Per-user account restrictions: email → array of allowed account aliases.
@@ -47,7 +61,7 @@ function getSession(req) {
   const token = parseCookies(req).sushi_session;
   if (!token) return null;
   const sess = SESSIONS.get(token);
-  if (!sess || sess.expires < Date.now()) { SESSIONS.delete(token); return null; }
+  if (!sess || sess.expires < Date.now()) { SESSIONS.delete(token); persistSessions(); return null; }
   return sess;
 }
 
@@ -113,6 +127,7 @@ async function handleOAuth(req, res, url) {
     // Create session
     const token = crypto.randomUUID();
     SESSIONS.set(token, { email, expires: Date.now() + SESSION_TTL_MS });
+    persistSessions();
     console.log(`[auth] Login: ${email}`);
     res.writeHead(302, {
       Location: '/',
@@ -124,7 +139,7 @@ async function handleOAuth(req, res, url) {
 
   if (url.pathname === '/auth/logout') {
     const token = parseCookies(req).sushi_session;
-    if (token) SESSIONS.delete(token);
+    if (token) { SESSIONS.delete(token); persistSessions(); }
     res.writeHead(302, {
       Location: '/auth/google',
       'Set-Cookie': 'sushi_session=; HttpOnly; Max-Age=0; Path=/',
@@ -451,7 +466,9 @@ function serveStatic(res, urlPath) {
     const content = fs.readFileSync(filePath);
     const ext = path.extname(filePath).toLowerCase();
     const mime = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css' };
-    res.writeHead(200, { 'Content-Type': mime[ext] || 'text/plain' });
+    const headers = { 'Content-Type': mime[ext] || 'text/plain' };
+    if (ext === '.html') headers['Cache-Control'] = 'no-store';
+    res.writeHead(200, headers);
     res.end(content);
   } catch {
     jsonRes(res, { error: 'Not found' }, 404);
