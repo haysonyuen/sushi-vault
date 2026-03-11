@@ -92,6 +92,7 @@ async function handleOAuth(req, res, url) {
       response_type: 'code',
       scope:         'openid email',
       access_type:   'online',
+      prompt:        'select_account',
     });
     res.writeHead(302, { Location: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
     res.end();
