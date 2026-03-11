@@ -9,10 +9,10 @@ export const DEMO_EMAIL = 'haysonyuen0114@gmail.com';
 export const isDemoUser = (email) => email?.toLowerCase() === DEMO_EMAIL;
 
 // Account descriptors
-const CHK = { id: 'mock_chase_chk', alias: 'Chase Checking', isCredit: false };
-const FR  = { id: 'mock_chase_fr',  alias: 'Chase Freedom',  isCredit: true  };
-const WFC = { id: 'mock_wf_chk',   alias: 'WF Checking',    isCredit: false };
-const WFS = { id: 'mock_wf_sav',   alias: 'WF Savings',     isCredit: false };
+const CHK = { id: 'mock_chase_chk', alias: 'Chase Checking (0001)', isCredit: false };
+const FR  = { id: 'mock_chase_fr',  alias: 'Chase Freedom (0002)',  isCredit: true  };
+const WFC = { id: 'mock_wf_chk',   alias: 'WF Checking (0003)',    isCredit: false };
+const WFS = { id: 'mock_wf_sav',   alias: 'WF Savings (0004)',     isCredit: false };
 
 function t(id, acc, date, counterparty, desc, amount, cat, internal = false) {
   return {
@@ -238,10 +238,10 @@ ALL_TRANSACTIONS.sort((a, b) => b.date.localeCompare(a.date));
 export function getMockLiquidity() {
   return {
     accounts: [
-      { alias: 'Chase Checking', available: 12450.00, ledger: 12450.00, isCredit: false },
-      { alias: 'Chase Freedom',  available: 0,        ledger: -2340.50, isCredit: true  },
-      { alias: 'WF Checking',   available:  8920.00, ledger:  8920.00, isCredit: false },
-      { alias: 'WF Savings',    available:  5600.00, ledger:  5600.00, isCredit: false },
+      { alias: 'Chase Checking (0001)', available: 12450.00, ledger: 12450.00, isCredit: false },
+      { alias: 'Chase Freedom (0002)',  available: 0,        ledger: -2340.50, isCredit: true  },
+      { alias: 'WF Checking (0003)',   available:  8920.00, ledger:  8920.00, isCredit: false },
+      { alias: 'WF Savings (0004)',    available:  5600.00, ledger:  5600.00, isCredit: false },
     ],
     totalCash:    12450.00 + 8920.00 + 5600.00,
     totalOwed:    2340.50,
