@@ -1054,8 +1054,9 @@ let prevTxns      = [];   // previous month, all accounts
 let allCachedTxns = [];   // full wide-range fetch, all accounts
 let allViewTxns   = [];   // currently visible (post account+type filter)
 let activeFilter     = 'all';
-let selectedAccount  = null; // null = all accounts
-let chatScopeActive  = false; // true = chat scoped to selectedAccount
+let selectedAccounts = new Set(); // empty = all accounts; Set of alias strings = filtered
+let chatScopeActive  = false; // true = chat scoped to single selectedAccount
+let loadAbortController = null; // cancels in-flight loadAllData fetch on rapid navigation
 let categoryChart    = null;
 let comparisonChart  = null;
 let hiddenTxnIds            = new Set(); // individually hidden transactions
@@ -1169,9 +1170,15 @@ async function loadAllData() {
   document.getElementById('month-label').textContent = `${MONTH_NAMES[viewMonth]} ${viewYear}`;
   document.getElementById('tx-body-wrap').innerHTML = `<div class="loading-state"><span class="spinner"></span>Loading transactions...</div>`;
 
+  // Cancel any in-flight request from a previous navigate() call
+  if (loadAbortController) loadAbortController.abort();
+  loadAbortController = new AbortController();
+  const signal = loadAbortController.signal;
+
   try {
-    const res  = await fetch(`/api/transactions?start=${wideStart}&end=${wideEnd}`);
+    const res  = await fetch(`/api/transactions?start=${wideStart}&end=${wideEnd}`, { signal });
     const data = await res.json();
+    if (signal.aborted) return; // a newer navigate() already took over
     if (data.error) throw new Error(data.error);
 
     // Split the single response into views client-side — no extra Teller calls
@@ -1190,6 +1197,7 @@ async function loadAllData() {
 
     applyAccountFilter(); // renders everything respecting current account selection
   } catch (e) {
+    if (e.name === 'AbortError') return; // expected — superseded by newer navigate()
     showKPIError('kpi-spend', e.message);
     showKPIError('kpi-burn', e.message);
     document.getElementById('tx-body-wrap').innerHTML = `<div class="loading-state" style="color:var(--red)">${e.message}</div>`;
@@ -1286,15 +1294,17 @@ function renderCategoryChart(txns) {
   const sorted  = [...tally.values()].sort((a, b) => b.total - a.total);
   const grandTotal = sorted.reduce((s, c) => s + c.total, 0);
 
+  const chartMonthLabel = `${MONTH_NAMES[viewMonth]} ${viewYear}`;
+
   if (sorted.length === 0) {
-    card.innerHTML = `<div class="card-title">Spending by Category</div><div class="empty-state">No spending data this period.</div>`;
+    card.innerHTML = `<div class="card-title">Spending by Category — ${chartMonthLabel}</div><div class="empty-state">No spending data this period.</div>`;
     return;
   }
 
   if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
 
   card.innerHTML = `
-    <div class="card-title">Spending by Category</div>
+    <div class="card-title">Spending by Category — ${chartMonthLabel}</div>
     <div class="donut-wrap">
       <canvas id="cat-canvas"></canvas>
       <div class="donut-center">
@@ -1355,9 +1365,9 @@ async function renderComparisonChart() {
     }
   }
 
-  const sel = selectedAccount;
+  const sel = selectedAccounts.size > 0 ? selectedAccounts : null;
   const applyFilters = txns =>
-    (sel ? txns.filter(t => t.accountAlias === sel) : txns)
+    (sel ? txns.filter(t => sel.has(t.accountAlias)) : txns)
     .filter(t => !hiddenTxnIds.has(t.id));
 
   const txnsA = applyFilters(compareTxnCache.get(keyA) || []);
@@ -1556,22 +1566,23 @@ function renderTransactions(txns) {
 
 // ── Account selector ─────────────────────────────────────────────────────────
 function renderAccountBar(accounts) {
-  // Single-account users: skip "All Accounts" and lock to that account.
-  if (accounts.length === 1 && selectedAccount !== accounts[0].alias) {
-    selectedAccount = accounts[0].alias;
+  // Single-account users: auto-lock to their one account.
+  if (accounts.length === 1 && !selectedAccounts.has(accounts[0].alias)) {
+    selectedAccounts = new Set([accounts[0].alias]);
   }
 
   const bar = document.getElementById('account-bar');
+  const allActive = selectedAccounts.size === 0;
   const pills = [
     `<span class="acc-label">Account</span>`,
     // Hide "All Accounts" when user only has access to one account.
     ...(accounts.length > 1
-      ? [`<button class="acc-pill ${!selectedAccount ? 'active' : ''}" onclick="setAccountFilter(null)">All Accounts</button>`]
+      ? [`<button class="acc-pill ${allActive ? 'active' : ''}" onclick="setAccountFilter(null)">All Accounts</button>`]
       : []),
     ...accounts.map(a => {
       const alias = a.alias.replace(/'/g, "\\'");
       const type  = a.isCredit ? 'Credit' : 'Debit';
-      return `<button class="acc-pill ${selectedAccount === a.alias ? 'active' : ''}" onclick="setAccountFilter('${alias}')">
+      return `<button class="acc-pill ${selectedAccounts.has(a.alias) ? 'active' : ''}" onclick="toggleAccountFilter('${alias}')">
         ${a.alias}<span class="acc-badge">${type}</span>
       </button>`;
     }),
@@ -1579,9 +1590,29 @@ function renderAccountBar(accounts) {
   bar.innerHTML = pills.join('');
 }
 
+// Clear to "All Accounts"
 function setAccountFilter(alias) {
-  selectedAccount = alias;
-  if (!alias) { chatScopeActive = false; }
+  if (alias === null) selectedAccounts.clear();
+  chatScopeActive = false;
+  if (liquiditySnapshot) renderAccountBar(liquiditySnapshot.accounts);
+  updateScopeBar();
+  applyAccountFilter();
+}
+
+// Toggle a single account in/out of the selected set
+function toggleAccountFilter(alias) {
+  if (selectedAccounts.has(alias)) {
+    selectedAccounts.delete(alias);
+    // If nothing left selected, treat as "all"
+    if (selectedAccounts.size === 0) chatScopeActive = false;
+  } else {
+    selectedAccounts.add(alias);
+  }
+  // If all accounts are individually selected, simplify to "all"
+  if (liquiditySnapshot && selectedAccounts.size === liquiditySnapshot.accounts.length) {
+    selectedAccounts.clear();
+    chatScopeActive = false;
+  }
   if (liquiditySnapshot) renderAccountBar(liquiditySnapshot.accounts);
   updateScopeBar();
   applyAccountFilter();
@@ -1629,11 +1660,12 @@ async function setCmpMonth(which, yyyymm) {
 }
 
 function updateScopeBar() {
-  const bar = document.getElementById('chat-scope-bar');
+  const bar   = document.getElementById('chat-scope-bar');
   const label = document.getElementById('scope-label');
-  if (selectedAccount) {
+  // Scope toggle is only meaningful when exactly one account is selected
+  if (selectedAccounts.size === 1) {
     bar.classList.add('visible');
-    label.textContent = selectedAccount + ' only';
+    label.textContent = [...selectedAccounts][0] + ' only';
   } else {
     bar.classList.remove('visible');
     chatScopeActive = false;
@@ -1643,24 +1675,44 @@ function updateScopeBar() {
 
 function applyAccountFilter() {
   const p   = prevMonth(viewYear, viewMonth);
-  const sel = selectedAccount;
+  // sel: Set of selected aliases, or null for "all"
+  const sel = selectedAccounts.size > 0 ? selectedAccounts : null;
+  const acctFilter = txns => sel ? txns.filter(t => sel.has(t.accountAlias)) : txns;
 
-  const cur = (sel ? currentTxns.filter(t => t.accountAlias === sel)  : currentTxns).filter(t => !hiddenTxnIds.has(t.id));
-  const prv = (sel ? prevTxns.filter(t => t.accountAlias === sel)      : prevTxns).filter(t => !hiddenTxnIds.has(t.id));
-  const all = (sel ? allCachedTxns.filter(t => t.accountAlias === sel) : allCachedTxns).filter(t => !hiddenTxnIds.has(t.id));
-  // Liquidity KPI: single account balance or combined net
+  const cur = acctFilter(currentTxns).filter(t => !hiddenTxnIds.has(t.id));
+  const prv = acctFilter(prevTxns).filter(t => !hiddenTxnIds.has(t.id));
+  const all = acctFilter(allCachedTxns).filter(t => !hiddenTxnIds.has(t.id));
+
+  // Liquidity KPI rendering
   if (sel && liquiditySnapshot) {
-    const acc = liquiditySnapshot.accounts.find(a => a.alias === sel);
-    if (acc) {
+    const selAccounts = liquiditySnapshot.accounts.filter(a => sel.has(a.alias));
+    if (selAccounts.length === 1) {
+      // Exactly one account — show its individual balance card
+      const acc = selAccounts[0];
       const el  = document.getElementById('kpi-liquidity');
       const val = acc.isCredit ? Math.abs(acc.ledger) : acc.available;
       el.innerHTML = `
         <div class="kpi-label">${acc.alias}</div>
         <div class="kpi-value" style="color:${acc.isCredit ? 'var(--red)' : 'var(--accent)'}">${acc.isCredit ? '-' : ''}${fmt(val)}</div>
         <div class="kpi-delta"><span class="neutral">${acc.isCredit ? 'balance owed' : 'available'}</span></div>`;
+    } else {
+      // Multiple selected — show subtotals for selected accounts
+      const totalCash = selAccounts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
+      const totalOwed = selAccounts.filter(a => a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
+      const net = totalCash - totalOwed;
+      const el  = document.getElementById('kpi-liquidity');
+      const accountLines = selAccounts.map(a =>
+        `<span style="color:var(--muted)">${a.alias}:</span> ${a.isCredit ? '<span style="color:var(--red)">-' + fmt(Math.abs(a.ledger)) + '</span>' : fmt(a.available)}`
+      ).join('<br/>');
+      el.innerHTML = `
+        <div class="kpi-label">Net Liquidity</div>
+        <div class="kpi-value" style="color:var(--accent)">${fmt(net)}</div>
+        <div class="kpi-delta" style="flex-direction:column;align-items:flex-start;gap:2px;margin-top:6px;font-size:11px">
+          ${accountLines}
+        </div>`;
     }
   } else if (liquiditySnapshot) {
-    // Re-render combined (without calling renderAccountBar again)
+    // All accounts — re-render combined view
     const data = liquiditySnapshot;
     const el   = document.getElementById('kpi-liquidity');
     const accountLines = data.accounts.map(a =>
@@ -1791,7 +1843,7 @@ async function sendChat() {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, accountScope: chatScopeActive ? selectedAccount : null }),
+      body: JSON.stringify({ question, accountScope: chatScopeActive ? [...selectedAccounts][0] : null }),
     });
 
     if (!res.ok) {
