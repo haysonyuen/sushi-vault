@@ -141,7 +141,7 @@ async function handleOAuth(req, res, url) {
     const token = parseCookies(req).sushi_session;
     if (token) { SESSIONS.delete(token); persistSessions(); }
     res.writeHead(302, {
-      Location: '/auth/google',
+      Location: '/login',
       'Set-Cookie': 'sushi_session=; HttpOnly; Max-Age=0; Path=/',
     });
     res.end();
