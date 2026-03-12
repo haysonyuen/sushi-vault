@@ -26,10 +26,11 @@ function cat(t) { return _chatCategory ? _chatCategory(t) : 'Other'; }
  * @param {string}   endDate   - YYYY-MM-DD
  * @param {string}   label     - report title (e.g. "Chase — Weekly Report")
  */
-export function buildReport(allTxns, account, startDate, endDate, label) {
+export function buildReport(allTxns, aliases, startDate, endDate, label) {
+  const aliasSet = new Set((aliases || []).map(a => a.toLowerCase()));
   const txns = allTxns.filter(t => {
     const inRange = t.date >= startDate && t.date <= endDate;
-    const inAccount = account === 'all' || t.accountAlias?.toLowerCase().includes(account.toLowerCase());
+    const inAccount = aliasSet.size === 0 || aliasSet.has(t.accountAlias?.toLowerCase());
     return inRange && inAccount;
   });
 
@@ -152,8 +153,8 @@ export function renderHtml(report) {
 }
 
 // ── Email sender ───────────────────────────────────────────────────────────
-export async function sendEmail(subject, html) {
-  const { GMAIL_USER, GMAIL_APP_PASSWORD, REPORT_TO } = process.env;
+export async function sendEmail(to, subject, html) {
+  const { GMAIL_USER, GMAIL_APP_PASSWORD } = process.env;
 
   if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
     throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD must be set in .env');
@@ -166,42 +167,11 @@ export async function sendEmail(subject, html) {
 
   const info = await transporter.sendMail({
     from: `"Sushi-Vault 🍣" <${GMAIL_USER}>`,
-    to: REPORT_TO || GMAIL_USER,
+    to,
     subject,
     html,
   });
 
-  console.log(`[email] Sent: ${info.messageId}`);
+  console.log(`[email] Sent to ${to}: ${info.messageId}`);
   return info;
-}
-
-// ── Schedule config ────────────────────────────────────────────────────────
-// Chase:  every Monday 8am
-// WF:     every other Monday 8am (ISO week number % 2 === 0)
-export const SCHEDULES = [
-  {
-    account: 'Chase',
-    label:   'Chase — Weekly Spending Report',
-    weeks:   1,           // every week
-    cronExpr: '0 8 * * 1', // Mon 8am
-  },
-  {
-    account: 'WF',
-    label:   'Wells Fargo — Biweekly Spending Report',
-    weeks:   2,           // every 2 weeks
-    cronExpr: '0 8 * * 1', // Mon 8am (gated by week check below)
-  },
-];
-
-// Returns true if this week should trigger the biweekly report
-export function isBiweeklyWeek() {
-  const now = new Date();
-  // ISO week: Jan 4 is always in week 1
-  const jan4 = new Date(now.getFullYear(), 0, 4);
-  const dayOfWeek = (jan4.getDay() + 6) % 7; // Mon=0
-  const startOfWeek1 = new Date(jan4);
-  startOfWeek1.setDate(jan4.getDate() - dayOfWeek);
-  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-  const weekNum = Math.floor((now - startOfWeek1) / msPerWeek) + 1;
-  return weekNum % 2 === 0;
 }

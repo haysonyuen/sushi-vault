@@ -10,7 +10,7 @@ import cron from 'node-cron';
 import { getAccounts, getBalance } from './teller.js';
 import { isDemoUser, getMockLiquidity, getMockTransactions } from './mock-data.js';
 import { getTaggedTransactions } from './tools/transactions.js';
-import { setChatCategory, buildReport, renderHtml, sendEmail, SCHEDULES, isBiweeklyWeek } from './reporter.js';
+import { setChatCategory, buildReport, renderHtml, sendEmail } from './reporter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -46,6 +46,13 @@ const USER_ACCOUNT_LIMITS = {
   'haysonyuenyyh@gmail.com': ['WF Savings (0954)', 'Chase Freedom (4844)'],
   'favouritemie@gmail.com':  ['Chase Freedom (4844)'],
 };
+
+// Per-user report config: each entry receives a weekly email with their own accounts.
+const USER_REPORT_CONFIG = [
+  { email: 'haysonyuenyyh@gmail.com', aliases: ['WF Savings (0954)', 'Chase Freedom (4844)'], isDemo: false },
+  { email: 'favouritemie@gmail.com',  aliases: ['Chase Freedom (4844)'],                      isDemo: false },
+  { email: 'haysonyuen0114@gmail.com', aliases: [],                                            isDemo: true  },
+];
 
 // Returns null (unrestricted/admin), an alias array (restricted), or [] (sees nothing).
 function allowedAliases(req) {
@@ -534,30 +541,22 @@ async function requestHandler(req, res) {
       jsonRes(res, { transactions: txns });
 
     } else if (url.pathname === '/api/email/test' && req.method === 'POST') {
-      // Dev endpoint: send a test report email for a given account
-      const body = await new Promise((resolve, reject) => {
-        let raw = '';
-        req.on('data', c => raw += c);
-        req.on('end', () => { try { resolve(JSON.parse(raw || '{}')); } catch { resolve({}); } });
-        req.on('error', reject);
-      });
-      const accountArg = (body.account || 'Chase').toLowerCase();
-      const schedule = SCHEDULES.find(s =>
-        s.account.toLowerCase().includes(accountArg) ||
-        accountArg.includes(s.account.toLowerCase()) ||
-        s.label.toLowerCase().includes(accountArg)
-      ) || SCHEDULES[0];
+      // Send a test report to the currently logged-in user for their own accounts
+      const sess = getSession(req);
+      const userConfig = USER_REPORT_CONFIG.find(u => u.email === sess?.email);
+      if (!userConfig) return jsonRes(res, { error: 'No report config for this user' }, 404);
+
       const endDate   = new Date().toISOString().split('T')[0];
       const startDate = (() => {
         const d = new Date();
-        d.setDate(d.getDate() - schedule.weeks * 7);
+        d.setDate(d.getDate() - 7);
         return d.toISOString().split('T')[0];
       })();
-      const allTxns = historyCache?.txns || [];
-      const report  = buildReport(allTxns, schedule.account, startDate, endDate, `[TEST] ${schedule.label}`);
-      const html    = renderHtml(report);
-      await sendEmail(`[TEST] ${schedule.label} — ${startDate} → ${endDate}`, html);
-      jsonRes(res, { ok: true, account: schedule.account, startDate, endDate, txnCount: report.txnCount, totalSpend: report.totalSpend });
+      const txns   = userConfig.isDemo ? getMockTransactions({ startDate, endDate }) : (historyCache?.txns || []);
+      const report = buildReport(txns, userConfig.aliases, startDate, endDate, '[TEST] Weekly Spending Report');
+      const html   = renderHtml(report);
+      await sendEmail(userConfig.email, `[TEST] Weekly Spending Report — ${startDate} → ${endDate}`, html);
+      jsonRes(res, { ok: true, to: userConfig.email, startDate, endDate, txnCount: report.txnCount, totalSpend: report.totalSpend });
 
     } else if (url.pathname === '/api/me') {
       const sess = getSession(req);
@@ -682,32 +681,30 @@ async function requestHandler(req, res) {
 setChatCategory(chatCategory);
 
 // ── Scheduled reports ──────────────────────────────────────────────────────
-async function fireReport(schedule) {
-  try {
-    const endDate   = new Date().toISOString().split('T')[0];
-    const startDate = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - schedule.weeks * 7);
-      return d.toISOString().split('T')[0];
-    })();
-    const allTxns = historyCache?.txns || [];
-    const report  = buildReport(allTxns, schedule.account, startDate, endDate, schedule.label);
-    const html    = renderHtml(report);
-    await sendEmail(`${schedule.label} — ${startDate} → ${endDate}`, html);
-    console.log(`[report] Sent ${schedule.label}`);
-  } catch (err) {
-    console.error(`[report] Failed for ${schedule.account}:`, err.message);
+async function fireAllUserReports() {
+  const endDate   = new Date().toISOString().split('T')[0];
+  const startDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  })();
+
+  for (const user of USER_REPORT_CONFIG) {
+    try {
+      const txns   = user.isDemo ? getMockTransactions({ startDate, endDate }) : (historyCache?.txns || []);
+      const report = buildReport(txns, user.aliases, startDate, endDate, 'Weekly Spending Report');
+      const html   = renderHtml(report);
+      await sendEmail(user.email, `Weekly Spending Report — ${startDate} → ${endDate}`, html);
+      console.log(`[report] Sent to ${user.email}`);
+    } catch (err) {
+      console.error(`[report] Failed for ${user.email}:`, err.message);
+    }
   }
 }
 
-for (const schedule of SCHEDULES) {
-  cron.schedule(schedule.cronExpr, () => {
-    // WF is biweekly — only fire on even ISO weeks
-    if (schedule.weeks === 2 && !isBiweeklyWeek()) return;
-    fireReport(schedule);
-  }, { timezone: 'America/Los_Angeles' });
-  console.log(`[cron] Scheduled: ${schedule.label} (${schedule.cronExpr})`);
-}
+// Single weekly cron — every Monday 8am PT
+cron.schedule('0 8 * * 1', fireAllUserReports, { timezone: 'America/Los_Angeles' });
+console.log('[cron] Scheduled: Weekly Spending Report (0 8 * * 1)');
 
 // ── Start server (HTTPS if certs present, else HTTP) ──────────────────────
 const SSL_CERT = process.env.SSL_CERT;
