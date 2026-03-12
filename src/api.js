@@ -552,7 +552,10 @@ async function requestHandler(req, res) {
         d.setDate(d.getDate() - 7);
         return d.toISOString().split('T')[0];
       })();
-      const txns   = userConfig.isDemo ? getMockTransactions({ startDate, endDate }) : (historyCache?.txns || []);
+      const txns = userConfig.isDemo ? getMockTransactions({ startDate, endDate }) : (historyCache?.txns || []);
+      if (!userConfig.isDemo && txns.length === 0) {
+        return jsonRes(res, { error: 'History cache is empty — wait a minute for data to load, then retry' }, 503);
+      }
       const report = buildReport(txns, userConfig.aliases, startDate, endDate, '[TEST] Weekly Spending Report');
       const html   = renderHtml(report);
       await sendEmail(userConfig.email, `[TEST] Weekly Spending Report — ${startDate} → ${endDate}`, html);
@@ -631,6 +634,10 @@ async function requestHandler(req, res) {
         const totalOwed = accts.filter(a => a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
         scopedLiquidity = { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
       }
+      // Validate accountScope is within the user's allowed accounts (prevent bypass)
+      if (accountScope && chatLimits && !chatLimits.includes(accountScope)) {
+        accountScope = null;
+      }
       if (accountScope) {
         scopedTxns = scopedTxns.filter(t => t.accountAlias === accountScope);
         const scopedAccounts = scopedLiquidity.accounts.filter(a => a.alias === accountScope);
@@ -691,7 +698,11 @@ async function fireAllUserReports() {
 
   for (const user of USER_REPORT_CONFIG) {
     try {
-      const txns   = user.isDemo ? getMockTransactions({ startDate, endDate }) : (historyCache?.txns || []);
+      const txns = user.isDemo ? getMockTransactions({ startDate, endDate }) : (historyCache?.txns || []);
+      if (!user.isDemo && txns.length === 0) {
+        console.warn(`[report] Skipping ${user.email} — history cache empty`);
+        continue;
+      }
       const report = buildReport(txns, user.aliases, startDate, endDate, 'Weekly Spending Report');
       const html   = renderHtml(report);
       await sendEmail(user.email, `Weekly Spending Report — ${startDate} → ${endDate}`, html);

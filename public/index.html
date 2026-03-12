@@ -1656,6 +1656,11 @@ async function setCmpMonth(which, yyyymm) {
   if (which === 'a') cmpA = { year: y, month: m - 1 };
   else               cmpB = { year: y, month: m - 1 };
   hiddenCompareCategories.clear();
+  if (cmpA && cmpB && cmpA.year === cmpB.year && cmpA.month === cmpB.month) {
+    document.getElementById('compare-chart-wrap').innerHTML =
+      '<p style="color:#64748b;text-align:center;padding:32px">Select two different months to compare</p>';
+    return;
+  }
   await renderComparisonChart();
 }
 
@@ -1744,6 +1749,8 @@ function navigate(dir) {
   hiddenCompareCategories.clear();
   cmpA = null; cmpB = null;
   txCategoryFilter = ''; txPage = 0;
+  const _catSel = document.getElementById('tx-category-filter');
+  if (_catSel) _catSel.value = '';
   loadAllData();
 }
 
@@ -1877,6 +1884,7 @@ async function sendChat() {
   } catch (e) {
     assistantEl.classList.remove('thinking');
     assistantEl.textContent = `Network error: ${e.message}`;
+    input.value = question;
   } finally {
     sendBtn.disabled = false;
     input.focus();
