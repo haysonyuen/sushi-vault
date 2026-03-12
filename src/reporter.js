@@ -5,7 +5,7 @@
  *   Chase  → every 1 week  (Mondays 8am)
  *   WF     → every 2 weeks (Mondays 8am, even weeks)
  */
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const dollars = n => '$' + Math.abs(n).toFixed(2);
@@ -154,24 +154,18 @@ export function renderHtml(report) {
 
 // ── Email sender ───────────────────────────────────────────────────────────
 export async function sendEmail(to, subject, html) {
-  const { GMAIL_USER, GMAIL_APP_PASSWORD } = process.env;
-
-  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
-    throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD must be set in .env');
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY must be set in .env');
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
-  });
-
-  const info = await transporter.sendMail({
-    from: `"Sushi-Vault 🍣" <${GMAIL_USER}>`,
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const { error } = await resend.emails.send({
+    from: 'Sushi-Vault <reports@sushivault.app>',
     to,
     subject,
     html,
   });
 
-  console.log(`[email] Sent to ${to}: ${info.messageId}`);
-  return info;
+  if (error) throw new Error(error.message);
+  console.log(`[email] Sent to ${to}`);
 }
