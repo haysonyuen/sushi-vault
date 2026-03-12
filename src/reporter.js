@@ -53,7 +53,7 @@ export function buildReport(allTxns, aliases, startDate, endDate, label) {
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     .slice(0, 10);
 
-  return { label, startDate, endDate, account, totalSpend, totalIncome, catSorted, top10, txnCount: spending.length };
+  return { label, startDate, endDate, totalSpend, totalIncome, catSorted, top10, txnCount: spending.length };
 }
 
 // ── HTML email template ────────────────────────────────────────────────────
