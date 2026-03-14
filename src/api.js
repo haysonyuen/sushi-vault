@@ -59,6 +59,7 @@ function allowedAliases(req) {
   const sess = getSession(req);
   if (!sess) return [];
   if (ADMIN_EMAILS.has(sess.email)) return null;
+  if (isDemoUser(sess.email)) return null;
   return USER_ACCOUNT_LIMITS[sess.email] ?? [];
 }
 
