@@ -193,6 +193,15 @@ async function withCache(key, fn) {
 // (stale-while-revalidate) so the UI never blocks waiting for Teller.
 const TX_HISTORY_FILE = path.join(__dirname, '..', '.tx-history.json');
 const HISTORY_TTL_MS  = 60 * 60 * 1000; // 1 hour
+const LEARNED_FILE    = path.join(__dirname, '..', '.learned-categories.json');
+
+// Merchant → category map, persisted to disk, grows over time
+const learnedMap = new Map();
+try {
+  const raw = JSON.parse(fs.readFileSync(LEARNED_FILE, 'utf8'));
+  for (const [k, v] of Object.entries(raw)) learnedMap.set(k, v);
+  console.log(`[learned] Loaded ${learnedMap.size} learned merchant categories`);
+} catch { /* first run — no learned file yet */ }
 
 let historyCache  = null;   // { txns: [], cachedAt: number } | null
 let historyBuilding = false; // guard against concurrent rebuilds
@@ -310,53 +319,59 @@ const CHAT_CATEGORIES = [
   { name: 'Gaming',           match: /STEAM|PLAYSTATION|XBOX|NINTENDO|GOOGLE PLAY/i },
   { name: 'Education',        match: /TUITION|SCHOOL|UNIVERSITY|UDEMY|COURSERA/i },
 ];
-const TELLER_CATEGORY_MAP = {
-  'dining':    'Dining Out',
-  'fuel':      'Gas',
-  'groceries': 'Groceries',
-  'home':      'Housing',
-  'insurance': 'Insurance',
-  'loan':      'Credit Payment',
-  'phone':     'Utilities',
-  'shopping':  'Shopping',
-  'software':  'Subscriptions',
-  'office':    'Shopping',
-};
+
+function learnedCategory(text) {
+  for (const [merchant, cat] of learnedMap) {
+    if (text.includes(merchant)) return cat;
+  }
+  return null;
+}
 
 function chatCategory(txn) {
   const text = `${txn.counterparty || ''} ${txn.description || ''}`.toUpperCase();
-  // Layer 1: regex (specific merchants take priority)
+  // Layer 1a: static regex (specific merchants take priority)
   for (const c of CHAT_CATEGORIES) if (c.match.test(text)) return c.name;
-  // Layer 2: Teller's category as fallback
-  const tellerCat = TELLER_CATEGORY_MAP[txn.category];
-  if (tellerCat) return tellerCat;
-  // Layer 3: Claude AI classification (attached at cache time)
+  // Layer 1b: learned merchant patterns (fed back from past AI classifications)
+  const learned = learnedCategory(text);
+  if (learned) return learned;
+  // Layer 2: Claude AI classification (attached at cache time)
   if (txn.aiCategory) return txn.aiCategory;
   return 'Other';
 }
 
-// --- AI categorization (Layer 3) ---
-// Called once per cache population. Sends only uncategorized transactions to
-// Claude Haiku for classification — zero cost for items regex/Teller already handle.
-const VALID_CATEGORIES = [
-  'Housing', 'Credit Payment', 'Utilities', 'Insurance', 'Peer Transfer',
-  'Wise Transfer', 'International', 'Cash / ATM', 'Food Delivery', 'Coffee', 'Fast Food',
-  'Dining Out', 'Asian Market', 'Costco', 'Groceries', 'Target', 'Walmart',
-  'Amazon', 'Shopping', 'Health', 'Gas', 'Transportation', 'Ski Trip',
-  'Travel', 'Subscriptions', 'Gaming', 'Education', 'Other',
-];
+// --- AI categorization (Layer 2) ---
+// Called once per cache population. Sends only transactions unhandled by Layer 1
+// to Claude Haiku. Results are fed back into learnedMap so repeat merchants are
+// never sent to Claude again — cost approaches zero as the map matures.
+
+function feedbackToLayer1(txns, classMap) {
+  let changed = false;
+  for (const t of txns) {
+    const cat = classMap.get(t.id);
+    if (!cat || cat === 'Other') continue; // don't learn ambiguous ones
+    const key = (t.counterparty || '').toUpperCase().trim();
+    if (!key || learnedMap.has(key)) continue; // already known
+    learnedMap.set(key, cat);
+    changed = true;
+    console.log(`[learned] New: "${key}" → ${cat}`);
+  }
+  if (changed) {
+    try {
+      fs.writeFileSync(LEARNED_FILE, JSON.stringify(Object.fromEntries(learnedMap)));
+    } catch (e) {
+      console.error('[learned] Failed to save:', e.message);
+    }
+  }
+}
 
 async function enrichWithAI(txns) {
   if (!process.env.ANTHROPIC_API_KEY) return txns;
 
-  // Send to AI any transaction that both regex (Layer 1) and Teller map (Layer 2) fail to classify.
-  // This is broader than checking t.category alone — it catches anything that would otherwise
-  // fall through to "Other" in the UI regardless of what Teller's category field says.
   const needsAI = txns.filter(t => {
     const text = `${t.counterparty || ''} ${t.description || ''}`.toUpperCase();
-    for (const c of CHAT_CATEGORIES) if (c.match.test(text)) return false; // Layer 1 handles it
-    if (TELLER_CATEGORY_MAP[t.category]) return false;                      // Layer 2 handles it
-    return true; // neither layer classified it → send to AI
+    for (const c of CHAT_CATEGORIES) if (c.match.test(text)) return false; // Layer 1a handles it
+    if (learnedCategory(text)) return false;                                // Layer 1b handles it
+    return true; // send to Claude
   });
   if (needsAI.length === 0) return txns;
 
@@ -375,13 +390,13 @@ async function enrichWithAI(txns) {
       max_tokens: 8192,
       messages: [{
         role: 'user',
-        content: `Classify each transaction into one of these categories: ${VALID_CATEGORIES.join(', ')}
+        content: `Classify each transaction into a short spending category name (e.g. "Dining Out", "Coffee", "Health", "Travel").
 
 Rules:
 - "Dining Out" = sit-down restaurants, local eateries (not fast food or delivery)
-- "Asian Market" = Asian grocery stores and specialty food markets
 - "Coffee" = coffee shops, boba, bubble tea, tea bars
 - "Fast Food" = national fast food chains
+- Use "Other" only if truly unclassifiable
 - Return ONLY a compact single-line JSON object {"id":"Category",...} — no markdown fences, no indentation, no explanation
 
 Transactions: ${JSON.stringify(items)}`,
@@ -392,6 +407,7 @@ Transactions: ${JSON.stringify(items)}`,
     const classifications = JSON.parse(raw);
     const classMap = new Map(Object.entries(classifications));
 
+    feedbackToLayer1(needsAI, classMap);
     console.log(`[ai-categorize] Done. Sample:`, [...classMap.entries()].slice(0, 3));
 
     return txns.map(t => ({
