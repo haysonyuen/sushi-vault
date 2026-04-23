@@ -58,9 +58,11 @@ const USER_REPORT_CONFIG = [
 function allowedAliases(req) {
   const sess = getSession(req);
   if (!sess) return [];
+  // Explicit account limits always take precedence — even for admins
+  if (USER_ACCOUNT_LIMITS[sess.email]) return USER_ACCOUNT_LIMITS[sess.email];
   if (ADMIN_EMAILS.has(sess.email)) return null;
   if (isDemoUser(sess.email)) return null;
-  return USER_ACCOUNT_LIMITS[sess.email] ?? [];
+  return [];
 }
 
 function parseCookies(req) {
