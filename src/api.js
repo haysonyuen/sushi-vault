@@ -358,7 +358,7 @@ const CHAT_CATEGORIES = [
   { name: 'Target',           match: /TARGET/i },
   { name: 'Walmart',          match: /WALMART|WAL-MART/i },
   { name: 'Amazon',           match: /AMAZON(?!.*PRIME)/i },
-  { name: 'Shopping',         match: /EBAY|BEST BUY|BESTBUY|HOME DEPOT|LOWES|IKEA|MACY|NORDSTROM|ROSS|TJ MAXX|MARSHALLS/i },
+  { name: 'Shopping',         match: /EBAY|BEST BUY|BESTBUY|HOME DEPOT|LOWES|IKEA|MACY|NORDSTROM|ROSS|TJ\s*MAXX|MARSHALLS/i },
 
   // Health & personal
   { name: 'Health',           match: /CVS|WALGREENS|RITE AID|PHARMACY|DOCTOR|MEDICAL|DENTAL|VISION|OPTOMETRY|KAISER|URGENT CARE|CLINIC/i },
