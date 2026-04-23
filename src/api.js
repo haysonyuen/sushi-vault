@@ -218,7 +218,8 @@ if (corrected) {
   console.log('[learned] Applied manual corrections');
 }
 
-let historyCache  = null;   // { txns: [], cachedAt: number } | null
+let historyCache      = null;   // { txns: [], cachedAt: number } | null
+let lastGoodLiquidity = null;   // last successful Teller balance response
 let historyBuilding = false; // guard against concurrent rebuilds
 
 // Load from disk on startup — instant if cache file exists
@@ -538,18 +539,29 @@ async function requestHandler(req, res) {
       if (isDemoUser(sess?.email)) return jsonRes(res, getMockLiquidity());
 
       // Cached — 2 Teller calls (accounts + balance per account)
-      const data = await withCache('liquidity', async () => {
-        const accounts = await getAccounts();
-        const withBal = await Promise.all(accounts.map(async a => {
-          const b = await getBalance(a.id);
-          return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
-        }));
-        const cash   = withBal.filter(a => !a.isCredit);
-        const credit = withBal.filter(a => a.isCredit);
-        const totalCash = cash.reduce((s, a) => s + a.available, 0);
-        const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
-        return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
-      });
+      let data;
+      try {
+        data = await withCache('liquidity', async () => {
+          const accounts = await getAccounts();
+          const withBal = await Promise.all(accounts.map(async a => {
+            const b = await getBalance(a.id);
+            return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
+          }));
+          const cash   = withBal.filter(a => !a.isCredit);
+          const credit = withBal.filter(a => a.isCredit);
+          const totalCash = cash.reduce((s, a) => s + a.available, 0);
+          const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
+          return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
+        });
+        lastGoodLiquidity = data;
+      } catch (e) {
+        if (e.message.includes('429') && lastGoodLiquidity) {
+          console.warn('[liquidity] Teller rate limited — serving stale balance data');
+          data = lastGoodLiquidity;
+        } else {
+          throw e;
+        }
+      }
       const limits = allowedAliases(req);
       if (limits) {
         const accts = data.accounts.filter(a => limits.includes(a.alias));
@@ -601,7 +613,9 @@ async function requestHandler(req, res) {
 
     } else if (url.pathname === '/api/cache/clear') {
       const size = CACHE.size + (historyCache?.txns?.length || 0);
+      const savedLiquidity = CACHE.get('liquidity'); // preserve across clears
       CACHE.clear();
+      if (savedLiquidity) CACHE.set('liquidity', savedLiquidity);
       historyCache = null;
       try { fs.writeFileSync(TX_HISTORY_FILE, JSON.stringify({})); } catch {}
       // Rebuild immediately in background after clearing
