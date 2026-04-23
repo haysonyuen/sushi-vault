@@ -834,9 +834,11 @@
     <div class="logo-sub">Private Financial Intelligence</div>
   </div>
   <div class="header-right">
-    <span class="header-date" id="header-date"></span>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+      <span class="header-date" id="header-date"></span>
+      <span id="liquidity-age" style="color:var(--muted);font-size:11px;white-space:nowrap"></span>
+    </div>
     <button class="btn-refresh" id="btn-refresh" onclick="refreshAll()">↻ Refresh</button>
-    <span id="liquidity-age" style="color:var(--muted);font-size:11px;white-space:nowrap"></span>
     <a class="btn-logout" href="/auth/logout">Sign out</a>
   </div>
 </header>
