@@ -167,25 +167,6 @@ async function handleOAuth(req, res, url) {
   return false;
 }
 
-// ── In-memory cache (liquidity, chat, etc.) ────────────────────────────────
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const CACHE = new Map();
-
-function getCached(key) {
-  const entry = CACHE.get(key);
-  if (entry && entry.expires > Date.now()) return entry.data;
-  CACHE.delete(key);
-  return null;
-}
-
-async function withCache(key, fn) {
-  const hit = getCached(key);
-  if (hit) { console.log(`[cache hit] ${key}`); return hit; }
-  const data = await fn();
-  CACHE.set(key, { data, expires: Date.now() + CACHE_TTL_MS });
-  console.log(`[cache set] ${key}`);
-  return data;
-}
 
 // ── Disk-backed transaction history (single blob, 13 months) ──────────────
 // One paginated Teller fetch covers the entire year. Stored as a single JSON
@@ -220,13 +201,61 @@ if (corrected) {
 }
 
 let historyCache      = null;   // { txns: [], cachedAt: number } | null
-let lastGoodLiquidity = null;   // last successful Teller balance response
 
-// Load last known liquidity from disk so 429s don't wipe the panel after restart
+// ── Liquidity: stale-while-revalidate ────────────────────────────────────────
+// Never call Teller in response to a page load. Serve disk cache instantly,
+// refresh in background every 30 min. No rate-limit exposure to the user.
+const LIQUIDITY_REFRESH_MS = 30 * 60 * 1000;
+let lastGoodLiquidity  = null;
+let liquidityFetchedAt = 0;
+let liquidityRefreshing = false;
+
+function isValidLiquidity(d) {
+  return d && Array.isArray(d.accounts) && d.accounts.length > 0 &&
+    typeof d.netLiquidity === 'number' &&
+    d.accounts.every(a => typeof a.alias === 'string' && typeof a.available === 'number');
+}
+
+// Load from disk on startup — instant if file exists and is valid
 try {
-  lastGoodLiquidity = JSON.parse(fs.readFileSync(LIQUIDITY_FILE, 'utf8'));
-  console.log('[liquidity] Loaded last-known balances from disk');
+  const raw = JSON.parse(fs.readFileSync(LIQUIDITY_FILE, 'utf8'));
+  if (isValidLiquidity(raw)) {
+    lastGoodLiquidity  = raw;
+    liquidityFetchedAt = fs.statSync(LIQUIDITY_FILE).mtimeMs;
+    console.log('[liquidity] Loaded last-known balances from disk');
+  } else {
+    console.warn('[liquidity] Disk cache invalid — discarding');
+  }
 } catch { /* first run */ }
+
+function saveLiquidity(data) {
+  lastGoodLiquidity  = data;
+  liquidityFetchedAt = Date.now();
+  try { fs.writeFileSync(LIQUIDITY_FILE, JSON.stringify(data)); } catch {}
+}
+
+async function fetchLiquidityFromTeller() {
+  const accounts = await getAccounts();
+  const withBal = await Promise.all(accounts.map(async a => {
+    const b = await getBalance(a.id);
+    return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
+  }));
+  const cash    = withBal.filter(a => !a.isCredit);
+  const credit  = withBal.filter(a =>  a.isCredit);
+  const totalCash = cash.reduce((s, a)   => s + a.available, 0);
+  const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
+  return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
+}
+
+function maybeRefreshLiquidity() {
+  if (liquidityRefreshing) return;
+  if (Date.now() - liquidityFetchedAt < LIQUIDITY_REFRESH_MS) return;
+  liquidityRefreshing = true;
+  fetchLiquidityFromTeller()
+    .then(data => { saveLiquidity(data); console.log('[liquidity] Background refresh succeeded'); })
+    .catch(e   => console.warn('[liquidity] Background refresh failed:', e.message))
+    .finally(() => { liquidityRefreshing = false; });
+}
 let historyBuilding = false; // guard against concurrent rebuilds
 
 // Load from disk on startup — instant if cache file exists
@@ -545,39 +574,32 @@ async function requestHandler(req, res) {
       const sess = getSession(req);
       if (isDemoUser(sess?.email)) return jsonRes(res, getMockLiquidity());
 
-      // Cached — 2 Teller calls (accounts + balance per account)
-      let data;
-      try {
-        data = await withCache('liquidity', async () => {
-          const accounts = await getAccounts();
-          const withBal = await Promise.all(accounts.map(async a => {
-            const b = await getBalance(a.id);
-            return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
-          }));
-          const cash   = withBal.filter(a => !a.isCredit);
-          const credit = withBal.filter(a => a.isCredit);
-          const totalCash = cash.reduce((s, a) => s + a.available, 0);
-          const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
-          return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
-        });
-        lastGoodLiquidity = data;
-        try { fs.writeFileSync(LIQUIDITY_FILE, JSON.stringify(data)); } catch {}
-      } catch (e) {
-        if (e.message.includes('429') && lastGoodLiquidity) {
-          console.warn('[liquidity] Teller rate limited — serving stale balance data');
-          data = lastGoodLiquidity;
-        } else {
-          throw e;
+      // Serve from disk cache instantly; background-refresh every 30 min.
+      // Teller is never called in response to a page load once cache exists.
+      if (lastGoodLiquidity) {
+        maybeRefreshLiquidity(); // fire & forget — no-op if fresh enough
+        const limits = allowedAliases(req);
+        if (limits) {
+          const accts = lastGoodLiquidity.accounts.filter(a => limits.includes(a.alias));
+          const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
+          const totalOwed = accts.filter(a =>  a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
+          return jsonRes(res, { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed, fetchedAt: liquidityFetchedAt });
         }
+        return jsonRes(res, { ...lastGoodLiquidity, fetchedAt: liquidityFetchedAt });
       }
-      const limits = allowedAliases(req);
-      if (limits) {
-        const accts = data.accounts.filter(a => limits.includes(a.alias));
-        const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
-        const totalOwed = accts.filter(a => a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
-        jsonRes(res, { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed });
-      } else {
-        jsonRes(res, data);
+
+      // First-ever run — no disk cache, must call Teller once
+      try {
+        const data = await fetchLiquidityFromTeller();
+        saveLiquidity(data);
+        return jsonRes(res, { ...data, fetchedAt: liquidityFetchedAt });
+      } catch (e) {
+        if (e.message.includes('429')) {
+          // Rate-limited even on first run — retry in 60s, return pending state
+          setTimeout(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, 60 * 1000);
+          return jsonRes(res, { pending: true });
+        }
+        throw e;
       }
 
     } else if (url.pathname === '/api/transactions') {
@@ -620,10 +642,7 @@ async function requestHandler(req, res) {
       jsonRes(res, { email: sess.email, isDemo: isDemoUser(sess.email) });
 
     } else if (url.pathname === '/api/cache/clear') {
-      const size = CACHE.size + (historyCache?.txns?.length || 0);
-      const savedLiquidity = CACHE.get('liquidity'); // preserve across clears
-      CACHE.clear();
-      if (savedLiquidity) CACHE.set('liquidity', savedLiquidity);
+      const size = historyCache?.txns?.length || 0;
       historyCache = null;
       try { fs.writeFileSync(TX_HISTORY_FILE, JSON.stringify({})); } catch {}
       // Rebuild immediately in background after clearing
@@ -660,18 +679,7 @@ async function requestHandler(req, res) {
         chatTxns  = getMockTransactions({ startDate: wideStart, endDate: wideEnd });
       } else {
         [liquidity, chatTxns] = await Promise.all([
-          withCache('liquidity', async () => {
-            const accounts = await getAccounts();
-            const withBal = await Promise.all(accounts.map(async a => {
-              const b = await getBalance(a.id);
-              return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
-            }));
-            const cash   = withBal.filter(a => !a.isCredit);
-            const credit = withBal.filter(a => a.isCredit);
-            const totalCash = cash.reduce((s, a) => s + a.available, 0);
-            const totalOwed = credit.reduce((s, a) => s + Math.abs(a.ledger), 0);
-            return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
-          }),
+          lastGoodLiquidity ? Promise.resolve(lastGoodLiquidity) : fetchLiquidityFromTeller().then(d => { saveLiquidity(d); return d; }),
           getTxnsForRange(wideStart, wideEnd),
         ]);
       }
