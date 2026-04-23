@@ -1211,6 +1211,13 @@ async function loadAllData() {
 }
 
 // ── KPI renders ──────────────────────────────────────────────────────────────
+function liquidityAgeLabel() {
+  const fetchedAt = liquiditySnapshot?.fetchedAt;
+  if (!fetchedAt) return '';
+  const ageMin = Math.round((Date.now() - fetchedAt) / 60000);
+  return ageMin > 1 ? `<div style="color:var(--muted);font-size:10px;margin-top:4px">as of ${ageMin} min ago</div>` : '';
+}
+
 function renderLiquidityKPI(data) {
   liquiditySnapshot = data;
   renderAccountBar(data.accounts);
@@ -1218,8 +1225,7 @@ function renderLiquidityKPI(data) {
   const accountLines = data.accounts.map(a =>
     `<span style="color:var(--muted)">${a.alias}:</span> ${a.isCredit ? '<span style="color:var(--red)">-' + fmt(Math.abs(a.ledger)) + '</span>' : fmt(a.available)}`
   ).join('<br/>');
-  const ageMin = data.fetchedAt ? Math.round((Date.now() - data.fetchedAt) / 60000) : null;
-  const ageLabel = ageMin !== null && ageMin > 1 ? `<div style="color:var(--muted);font-size:10px;margin-top:4px">as of ${ageMin} min ago</div>` : '';
+  const ageLabel = liquidityAgeLabel();
   el.innerHTML = `
     <div class="kpi-label">Net Liquidity</div>
     <div class="kpi-value" style="color:var(--accent)">${fmt(data.netLiquidity)}</div>
@@ -1708,7 +1714,8 @@ function applyAccountFilter() {
       el.innerHTML = `
         <div class="kpi-label">${acc.alias}</div>
         <div class="kpi-value" style="color:${acc.isCredit ? 'var(--red)' : 'var(--accent)'}">${acc.isCredit ? '-' : ''}${fmt(val)}</div>
-        <div class="kpi-delta"><span class="neutral">${acc.isCredit ? 'balance owed' : 'available'}</span></div>`;
+        <div class="kpi-delta"><span class="neutral">${acc.isCredit ? 'balance owed' : 'available'}</span></div>
+        ${liquidityAgeLabel()}`;
     } else {
       // Multiple selected — show subtotals for selected accounts
       const totalCash = selAccounts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
@@ -1723,7 +1730,8 @@ function applyAccountFilter() {
         <div class="kpi-value" style="color:var(--accent)">${fmt(net)}</div>
         <div class="kpi-delta" style="flex-direction:column;align-items:flex-start;gap:2px;margin-top:6px;font-size:11px">
           ${accountLines}
-        </div>`;
+        </div>
+        ${liquidityAgeLabel()}`;
     }
   } else if (liquiditySnapshot) {
     // All accounts — re-render combined view
@@ -1737,7 +1745,8 @@ function applyAccountFilter() {
       <div class="kpi-value" style="color:var(--accent)">${fmt(data.netLiquidity)}</div>
       <div class="kpi-delta" style="flex-direction:column;align-items:flex-start;gap:2px;margin-top:6px;font-size:11px">
         ${accountLines}
-      </div>`;
+      </div>
+      ${liquidityAgeLabel()}`;
   }
 
   renderSpendKPI(cur, prv, p.month);
