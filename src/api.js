@@ -191,7 +191,8 @@ async function withCache(key, fn) {
 // One paginated Teller fetch covers the entire year. Stored as a single JSON
 // file so history survives restarts. TTL = 1 hour; rebuilds in background
 // (stale-while-revalidate) so the UI never blocks waiting for Teller.
-const TX_HISTORY_FILE = path.join(__dirname, '..', '.tx-history.json');
+const TX_HISTORY_FILE  = path.join(__dirname, '..', '.tx-history.json');
+const LIQUIDITY_FILE   = path.join(__dirname, '..', '.last-liquidity.json');
 const HISTORY_TTL_MS  = 60 * 60 * 1000; // 1 hour
 const LEARNED_FILE    = path.join(__dirname, '..', '.learned-categories.json');
 
@@ -220,6 +221,12 @@ if (corrected) {
 
 let historyCache      = null;   // { txns: [], cachedAt: number } | null
 let lastGoodLiquidity = null;   // last successful Teller balance response
+
+// Load last known liquidity from disk so 429s don't wipe the panel after restart
+try {
+  lastGoodLiquidity = JSON.parse(fs.readFileSync(LIQUIDITY_FILE, 'utf8'));
+  console.log('[liquidity] Loaded last-known balances from disk');
+} catch { /* first run */ }
 let historyBuilding = false; // guard against concurrent rebuilds
 
 // Load from disk on startup — instant if cache file exists
@@ -554,6 +561,7 @@ async function requestHandler(req, res) {
           return { accounts: withBal, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
         });
         lastGoodLiquidity = data;
+        try { fs.writeFileSync(LIQUIDITY_FILE, JSON.stringify(data)); } catch {}
       } catch (e) {
         if (e.message.includes('429') && lastGoodLiquidity) {
           console.warn('[liquidity] Teller rate limited — serving stale balance data');
