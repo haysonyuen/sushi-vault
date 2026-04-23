@@ -767,7 +767,12 @@ async function fireAllUserReports() {
         continue;
       }
       const report = buildReport(txns, user.aliases, startDate, endDate, 'Weekly Spending Report');
-      const html   = renderHtml(report);
+      console.log(`[report] ${user.email} — txnCount: ${report.txnCount}, totalSpend: $${report.totalSpend.toFixed(2)} (${startDate} → ${endDate})`);
+      if (report.totalSpend === 0) {
+        console.warn(`[report] Skipping ${user.email} — totalSpend is $0, not sending empty report`);
+        continue;
+      }
+      const html = renderHtml(report);
       await sendEmail(user.email, `Weekly Spending Report — ${startDate} → ${endDate}`, html);
       console.log(`[report] Sent to ${user.email}`);
     } catch (err) {
