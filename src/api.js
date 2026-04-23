@@ -783,6 +783,9 @@ async function fireAllUserReports() {
 
 // Single weekly cron — every Monday 8am PT
 cron.schedule('0 8 * * 1', fireAllUserReports, { timezone: 'America/Los_Angeles' });
+
+// Keep liquidity fresh on a server-side timer — independent of page visits
+setInterval(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, LIQUIDITY_REFRESH_MS);
 console.log('[cron] Scheduled: Weekly Spending Report (0 8 * * 1)');
 
 // ── Start server (HTTPS if certs present, else HTTP) ──────────────────────
