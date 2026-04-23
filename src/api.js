@@ -40,8 +40,23 @@ const ADMIN_EMAILS = new Set(
   (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
 );
 
-// Per-user account restrictions: email → array of allowed account aliases (with last4).
-// Admins are unrestricted. Users not listed here see no accounts by default.
+// ── ACCOUNT ACCESS CONTROL — DO NOT BYPASS ────────────────────────────────
+// This table defines the authoritative access rules for every user.
+// Any future fix, feature, or refactor MUST preserve these boundaries.
+// No user should ever see accounts outside their permitted list.
+//
+//   haysonyuenyyh@gmail.com  → WF Savings (0954) + Chase Freedom (4844) ONLY
+//   favouritemie@gmail.com   → Chase Freedom (4844) ONLY
+//   haysonyuen0114@gmail.com → Demo data only (mock accounts, no real bank data)
+//   Admin emails (ADMIN_EMAILS env) not listed below → all real accounts
+//
+// RULES enforced by allowedAliases():
+//   1. USER_ACCOUNT_LIMITS always wins — even if the email is also in ADMIN_EMAILS
+//   2. Demo users always get mock data — never real Teller transactions
+//   3. Unauthenticated requests get nothing (empty array)
+//   4. Any new endpoint that returns transactions or balances MUST call
+//      allowedAliases() and filter accordingly before responding.
+// ──────────────────────────────────────────────────────────────────────────
 const USER_ACCOUNT_LIMITS = {
   'haysonyuenyyh@gmail.com': ['WF Savings (0954)', 'Chase Freedom (4844)'],
   'favouritemie@gmail.com':  ['Chase Freedom (4844)'],
@@ -54,7 +69,8 @@ const USER_REPORT_CONFIG = [
   { email: 'haysonyuen0114@gmail.com', aliases: [],                                            isDemo: true  },
 ];
 
-// Returns null (unrestricted/admin), an alias array (restricted), or [] (sees nothing).
+// Returns null (unrestricted), an alias array (restricted), or [] (no access).
+// USER_ACCOUNT_LIMITS always takes precedence over ADMIN_EMAILS.
 function allowedAliases(req) {
   const sess = getSession(req);
   if (!sess) return [];
