@@ -1222,10 +1222,14 @@ function liquidityAgeLabel() {
     return '';
   }
   const ageMin = Math.round((Date.now() - fetchedAt) / 60000);
-  const text = ageMin <= 1 ? 'just now' : `as of ${ageMin} min ago`;
+  const age = ageMin <= 1 ? 'just now' : `${ageMin} min ago`;
+  const text = `last fetch: ${age}`;
   if (ageSpan) ageSpan.textContent = text;
-  return ageMin > 1 ? `<div style="color:var(--muted);font-size:10px;margin-top:4px">${text}</div>` : '';
+  return `<div style="color:var(--muted);font-size:10px;margin-top:4px">${text}</div>`;
 }
+
+// Tick the header fetch-time label every minute without re-rendering the full KPI
+setInterval(liquidityAgeLabel, 60 * 1000);
 
 function renderLiquidityKPI(data) {
   liquiditySnapshot = data;
