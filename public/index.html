@@ -1028,16 +1028,16 @@ const TELLER_CATEGORY_MAP = {
 };
 
 function categorize(txn) {
+  // Use server-resolved category if available (authoritative — applies all server-side layers)
+  if (txn.resolvedCategory) {
+    const match = CATEGORIES.find(c => c.name === txn.resolvedCategory);
+    if (match) return match;
+    return { name: txn.resolvedCategory, color: '#94a3b8', bg: '#1e293b' };
+  }
   const text = `${txn.counterparty || ''} ${txn.description || ''}`.toUpperCase();
   // Layer 1: regex (specific merchants take priority)
   for (const c of CATEGORIES) if (c.match.test(text)) return c;
-  // Layer 2: Teller's category as fallback
-  const tellerName = TELLER_CATEGORY_MAP[txn.category];
-  if (tellerName) {
-    const match = CATEGORIES.find(c => c.name === tellerName);
-    if (match) return match;
-  }
-  // Layer 3: Claude AI classification (attached server-side at cache time)
+  // Layer 2: Claude AI classification (attached server-side at cache time)
   if (txn.aiCategory) {
     const match = CATEGORIES.find(c => c.name === txn.aiCategory);
     if (match) return match;

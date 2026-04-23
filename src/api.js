@@ -203,6 +203,21 @@ try {
   console.log(`[learned] Loaded ${learnedMap.size} learned merchant categories`);
 } catch { /* first run — no learned file yet */ }
 
+// Manual corrections — override any wrong AI classifications in learnedMap
+const LEARNED_CORRECTIONS = {
+  'THANH HUONG SANDWICHES': 'Dining Out',
+  'YESMEAL GROCERIES':      'Groceries',
+};
+let corrected = false;
+for (const [k, v] of Object.entries(LEARNED_CORRECTIONS)) {
+  if (learnedMap.get(k) !== v) { learnedMap.set(k, v); corrected = true; }
+}
+if (corrected) {
+  try { fs.writeFileSync(LEARNED_FILE, JSON.stringify(Object.fromEntries(learnedMap))); }
+  catch (e) { console.error('[learned] Failed to save corrections:', e.message); }
+  console.log('[learned] Applied manual corrections');
+}
+
 let historyCache  = null;   // { txns: [], cachedAt: number } | null
 let historyBuilding = false; // guard against concurrent rebuilds
 
@@ -556,7 +571,7 @@ async function requestHandler(req, res) {
       let txns  = await getTxnsForRange(start, end);
       const limits = allowedAliases(req);
       if (limits) txns = txns.filter(t => limits.includes(t.accountAlias));
-      jsonRes(res, { transactions: txns });
+      jsonRes(res, { transactions: txns.map(t => ({ ...t, resolvedCategory: chatCategory(t) })) });
 
     } else if (url.pathname === '/api/email/test' && req.method === 'POST') {
       // Send a test report to the currently logged-in user for their own accounts
