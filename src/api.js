@@ -236,6 +236,7 @@ function saveLiquidity(data) {
 
 async function fetchLiquidityFromTeller() {
   const accounts = await getAccounts();
+  if (!accounts.length) throw new Error('Teller returned no accounts — possible rate limit or auth error');
   const withBal = await Promise.all(accounts.map(async a => {
     const b = await getBalance(a.id);
     return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
@@ -603,13 +604,12 @@ async function requestHandler(req, res) {
         }
         return jsonRes(res, { ...data, fetchedAt: liquidityFetchedAt });
       } catch (e) {
-        if (e.message.includes('429')) {
-          // Rate-limited — return stale data with TRUE last fetch time (fetchedAt unchanged)
-          if (lastGoodLiquidity) return jsonRes(res, { ...lastGoodLiquidity, fetchedAt: liquidityFetchedAt });
-          setTimeout(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, 60 * 1000);
-          return jsonRes(res, { pending: true });
-        }
-        throw e;
+        console.warn('[liquidity] Fetch failed:', e.message);
+        // Any failure — serve stale data if available (fetchedAt unchanged = true last fetch time)
+        if (lastGoodLiquidity) return jsonRes(res, { ...lastGoodLiquidity, fetchedAt: liquidityFetchedAt });
+        // No stale data — schedule retry and return pending
+        if (e.message.includes('429')) setTimeout(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, 60 * 1000);
+        return jsonRes(res, { pending: true });
       }
 
     } else if (url.pathname === '/api/transactions') {
