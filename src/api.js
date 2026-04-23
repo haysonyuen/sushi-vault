@@ -574,10 +574,12 @@ async function requestHandler(req, res) {
       const sess = getSession(req);
       if (isDemoUser(sess?.email)) return jsonRes(res, getMockLiquidity());
 
-      // Serve from disk cache instantly; background-refresh every 30 min.
-      // Teller is never called in response to a page load once cache exists.
-      if (lastGoodLiquidity) {
-        maybeRefreshLiquidity(); // fire & forget — no-op if fresh enough
+      const force = url.searchParams.get('force') === 'true';
+
+      // Serve from disk cache instantly on normal loads.
+      // On force=true (manual refresh button), call Teller directly.
+      if (lastGoodLiquidity && !force) {
+        maybeRefreshLiquidity(); // background no-op if still fresh
         const limits = allowedAliases(req);
         if (limits) {
           const accts = lastGoodLiquidity.accounts.filter(a => limits.includes(a.alias));
@@ -588,14 +590,22 @@ async function requestHandler(req, res) {
         return jsonRes(res, { ...lastGoodLiquidity, fetchedAt: liquidityFetchedAt });
       }
 
-      // First-ever run — no disk cache, must call Teller once
+      // force=true OR first-ever run — call Teller blocking
       try {
         const data = await fetchLiquidityFromTeller();
         saveLiquidity(data);
+        const limits = allowedAliases(req);
+        if (limits) {
+          const accts = data.accounts.filter(a => limits.includes(a.alias));
+          const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
+          const totalOwed = accts.filter(a =>  a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
+          return jsonRes(res, { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed, fetchedAt: liquidityFetchedAt });
+        }
         return jsonRes(res, { ...data, fetchedAt: liquidityFetchedAt });
       } catch (e) {
         if (e.message.includes('429')) {
-          // Rate-limited even on first run — retry in 60s, return pending state
+          // Rate-limited — return stale data with TRUE last fetch time (fetchedAt unchanged)
+          if (lastGoodLiquidity) return jsonRes(res, { ...lastGoodLiquidity, fetchedAt: liquidityFetchedAt });
           setTimeout(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, 60 * 1000);
           return jsonRes(res, { pending: true });
         }
@@ -784,8 +794,7 @@ async function fireAllUserReports() {
 // Single weekly cron — every Monday 8am PT
 cron.schedule('0 8 * * 1', fireAllUserReports, { timezone: 'America/Los_Angeles' });
 
-// Keep liquidity fresh on a server-side timer — independent of page visits
-setInterval(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, LIQUIDITY_REFRESH_MS);
+
 console.log('[cron] Scheduled: Weekly Spending Report (0 8 * * 1)');
 
 // ── Start server (HTTPS if certs present, else HTTP) ──────────────────────

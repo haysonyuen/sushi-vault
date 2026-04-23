@@ -1139,16 +1139,16 @@ async function refreshAll() {
   try {
     // Only 2 API calls total: liquidity + one wide transaction fetch.
     // All views (current month, prev month, burn rate) are split client-side.
-    await Promise.all([loadLiquidity(), loadAllData()]);
+    await Promise.all([loadLiquidity(true), loadAllData()]);
   } finally {
     btn.disabled = false;
     btn.textContent = '↻ Refresh';
   }
 }
 
-async function loadLiquidity() {
+async function loadLiquidity(force = false) {
   try {
-    const res  = await fetch('/api/liquidity');
+    const res  = await fetch(force ? '/api/liquidity?force=true' : '/api/liquidity');
     const data = await res.json();
     if (data.pending) {
       const el = document.getElementById('kpi-liquidity');
