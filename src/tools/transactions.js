@@ -14,6 +14,7 @@ export async function getTaggedTransactions({ startDate, endDate } = {}) {
       return txns.map((t) => ({
         ...t,
         accountAlias: acc.alias,
+        accountLast4: acc.last4,
         accountId: acc.id,
         isCredit: acc.isCredit,
       }));

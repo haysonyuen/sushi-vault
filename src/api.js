@@ -41,25 +41,26 @@ const ADMIN_EMAILS = new Set(
 );
 
 // ── ACCOUNT ACCESS CONTROL — DO NOT BYPASS ────────────────────────────────
-// This table defines the authoritative access rules for every user.
-// Any future fix, feature, or refactor MUST preserve these boundaries.
-// No user should ever see accounts outside their permitted list.
+// Access is enforced by last4 digits of the account number — these are
+// immutable identifiers from the bank, immune to alias format changes.
 //
-//   haysonyuenyyh@gmail.com  → WF Savings (0954) + Chase Freedom (4844) ONLY
-//   favouritemie@gmail.com   → Chase Freedom (4844) ONLY
+//   haysonyuenyyh@gmail.com  → last4 0954 + 4844 ONLY
+//   favouritemie@gmail.com   → last4 4844 ONLY
 //   haysonyuen0114@gmail.com → Demo data only (mock accounts, no real bank data)
-//   Admin emails (ADMIN_EMAILS env) not listed below → all real accounts
+//   Admin emails (ADMIN_EMAILS env) not listed here → all real accounts
 //
-// RULES enforced by allowedAliases():
+// RULES:
 //   1. USER_ACCOUNT_LIMITS always wins — even if the email is also in ADMIN_EMAILS
 //   2. Demo users always get mock data — never real Teller transactions
-//   3. Unauthenticated requests get nothing (empty array)
-//   4. Any new endpoint that returns transactions or balances MUST call
-//      allowedAliases() and filter accordingly before responding.
+//   3. Unauthenticated requests get nothing (empty Set)
+//   4. ANY endpoint returning accounts, transactions, or balances MUST pass
+//      data through filterLiquidity() / filterTransactions() before responding.
+//   5. The /api/liquidity endpoint uses a SINGLE EXIT through filterLiquidity()
+//      so no code path can bypass filtering.
 // ──────────────────────────────────────────────────────────────────────────
 const USER_ACCOUNT_LIMITS = {
-  'haysonyuenyyh@gmail.com': ['WF Savings (0954)', 'Chase Freedom (4844)'],
-  'favouritemie@gmail.com':  ['Chase Freedom (4844)'],
+  'haysonyuenyyh@gmail.com': new Set(['0954', '4844']),
+  'favouritemie@gmail.com':  new Set(['4844']),
 };
 
 // Per-user report config: each entry receives a weekly email with their own accounts.
@@ -69,16 +70,48 @@ const USER_REPORT_CONFIG = [
   { email: 'haysonyuen0114@gmail.com', aliases: [],                                            isDemo: true  },
 ];
 
-// Returns null (unrestricted), an alias array (restricted), or [] (no access).
-// USER_ACCOUNT_LIMITS always takes precedence over ADMIN_EMAILS.
-function allowedAliases(req) {
+// Returns null (unrestricted admin) or Set<string> of permitted last4 values.
+// An empty Set means no access at all.
+function allowedLast4s(req) {
   const sess = getSession(req);
-  if (!sess) return [];
-  // Explicit account limits always take precedence — even for admins
+  if (!sess) return new Set();
   if (USER_ACCOUNT_LIMITS[sess.email]) return USER_ACCOUNT_LIMITS[sess.email];
   if (ADMIN_EMAILS.has(sess.email)) return null;
   if (isDemoUser(sess.email)) return null;
-  return [];
+  return new Set();
+}
+
+// Extract last4 from alias string "Name (XXXX)" — fallback for legacy cache entries
+function extractLast4(str) {
+  const m = str?.match(/\((\d{4})\)$/);
+  return m ? m[1] : null;
+}
+
+// ── Centralized account filters — ALL data passes through these ───────────
+// Filter liquidity data for a specific user. Returns a new object with only permitted accounts.
+function filterLiquidity(data, req) {
+  if (!data) return data;
+  const allowed = allowedLast4s(req);
+  const sess = getSession(req);
+  console.log(`[acl] filterLiquidity — email=${sess?.email} allowed=${allowed ? `Set(${[...allowed]})` : 'null(admin)'} inputAccounts=${data.accounts.length}`);
+  if (!allowed) return data; // null = unrestricted (admin)
+  const accts = data.accounts.filter(a => {
+    const l4 = a.last4 ?? extractLast4(a.alias);
+    const pass = allowed.has(l4);
+    if (!pass) console.log(`[acl]   BLOCKED: ${a.alias} (last4=${l4})`);
+    return pass;
+  });
+  console.log(`[acl]   result: ${accts.length} accounts passed filter`);
+  const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
+  const totalOwed = accts.filter(a =>  a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
+  return { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
+}
+
+// Filter transactions for a specific user.
+function filterTransactions(txns, req) {
+  const allowed = allowedLast4s(req);
+  if (!allowed) return txns; // null = unrestricted
+  return txns.filter(t => allowed.has(t.accountLast4 ?? extractLast4(t.accountAlias)));
 }
 
 function parseCookies(req) {
@@ -257,7 +290,7 @@ async function fetchLiquidityFromTeller() {
   if (!accounts.length) throw new Error('Teller returned no accounts — possible rate limit or auth error');
   const withBal = await Promise.all(accounts.map(async a => {
     const b = await getBalance(a.id);
-    return { alias: a.alias, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
+    return { alias: a.alias, last4: a.last4, available: b.available, ledger: b.ledger, isCredit: a.isCredit };
   }));
   const cash    = withBal.filter(a => !a.isCredit);
   const credit  = withBal.filter(a =>  a.isCredit);
@@ -594,41 +627,28 @@ async function requestHandler(req, res) {
       if (isDemoUser(sess?.email)) return jsonRes(res, getMockLiquidity());
 
       const force = url.searchParams.get('force') === 'true';
+      let raw = null;
 
-      // Serve from disk cache instantly on normal loads.
-      // On force=true (manual refresh button), call Teller directly.
       if (lastGoodLiquidity && !force) {
-        maybeRefreshLiquidity(); // background no-op if still fresh
-        const limits = allowedAliases(req);
-        if (limits) {
-          const accts = lastGoodLiquidity.accounts.filter(a => limits.includes(a.alias));
-          const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
-          const totalOwed = accts.filter(a =>  a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
-          return jsonRes(res, { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed, fetchedAt: liquidityFetchedAt });
+        maybeRefreshLiquidity();
+        raw = lastGoodLiquidity;
+      } else {
+        try {
+          raw = await fetchLiquidityFromTeller();
+          saveLiquidity(raw);
+        } catch (e) {
+          console.warn('[liquidity] Fetch failed:', e.message);
+          raw = lastGoodLiquidity;
+          if (!raw) {
+            if (e.message.includes('429')) setTimeout(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, 60 * 1000);
+            return jsonRes(res, { pending: true });
+          }
         }
-        return jsonRes(res, { ...lastGoodLiquidity, fetchedAt: liquidityFetchedAt });
       }
 
-      // force=true OR first-ever run — call Teller blocking
-      try {
-        const data = await fetchLiquidityFromTeller();
-        saveLiquidity(data);
-        const limits = allowedAliases(req);
-        if (limits) {
-          const accts = data.accounts.filter(a => limits.includes(a.alias));
-          const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
-          const totalOwed = accts.filter(a =>  a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
-          return jsonRes(res, { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed, fetchedAt: liquidityFetchedAt });
-        }
-        return jsonRes(res, { ...data, fetchedAt: liquidityFetchedAt });
-      } catch (e) {
-        console.warn('[liquidity] Fetch failed:', e.message);
-        // Any failure — serve stale data if available (fetchedAt unchanged = true last fetch time)
-        if (lastGoodLiquidity) return jsonRes(res, { ...lastGoodLiquidity, fetchedAt: liquidityFetchedAt });
-        // No stale data — schedule retry and return pending
-        if (e.message.includes('429')) setTimeout(() => { liquidityFetchedAt = 0; maybeRefreshLiquidity(); }, 60 * 1000);
-        return jsonRes(res, { pending: true });
-      }
+      // ── SINGLE EXIT — every response passes through filterLiquidity() ──
+      const filtered = filterLiquidity(raw, req);
+      return jsonRes(res, { ...filtered, fetchedAt: liquidityFetchedAt });
 
     } else if (url.pathname === '/api/transactions') {
       const start = url.searchParams.get('start') || undefined;
@@ -639,8 +659,7 @@ async function requestHandler(req, res) {
       }
 
       let txns  = await getTxnsForRange(start, end);
-      const limits = allowedAliases(req);
-      if (limits) txns = txns.filter(t => limits.includes(t.accountAlias));
+      txns = filterTransactions(txns, req);
       jsonRes(res, { transactions: txns.map(t => ({ ...t, resolvedCategory: chatCategory(t) })) });
 
     } else if (url.pathname === '/api/email/test' && req.method === 'POST') {
@@ -690,7 +709,7 @@ async function requestHandler(req, res) {
         req.on('end', () => resolve(raw));
         req.on('error', reject);
       });
-      const { question, accountScope } = JSON.parse(body);
+      let { question, accountScope } = JSON.parse(body);
 
       // Build context using the disk-cached month store — 12 months of history,
       // zero extra Teller calls if the pre-warm already ran.
@@ -713,20 +732,12 @@ async function requestHandler(req, res) {
       }
       const txnData = { transactions: chatTxns };
 
-      // Apply per-user account restrictions first, then honour any UI accountScope.
-      const chatLimits = allowedAliases(req);
-      let scopedTxns = chatLimits
-        ? txnData.transactions.filter(t => chatLimits.includes(t.accountAlias))
-        : txnData.transactions;
-      let scopedLiquidity = liquidity;
-      if (chatLimits) {
-        const accts = liquidity.accounts.filter(a => chatLimits.includes(a.alias));
-        const totalCash = accts.filter(a => !a.isCredit).reduce((s, a) => s + a.available, 0);
-        const totalOwed = accts.filter(a => a.isCredit).reduce((s, a) => s + Math.abs(a.ledger), 0);
-        scopedLiquidity = { accounts: accts, totalCash, totalOwed, netLiquidity: totalCash - totalOwed };
-      }
+      // Apply per-user account restrictions via centralized filters.
+      let scopedTxns = filterTransactions(txnData.transactions, req);
+      let scopedLiquidity = filterLiquidity(liquidity, req);
       // Validate accountScope is within the user's allowed accounts (prevent bypass)
-      if (accountScope && chatLimits && !chatLimits.includes(accountScope)) {
+      const chatAllowed = allowedLast4s(req);
+      if (accountScope && chatAllowed && !chatAllowed.has(extractLast4(accountScope))) {
         accountScope = null;
       }
       if (accountScope) {

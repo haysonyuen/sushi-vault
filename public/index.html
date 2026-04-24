@@ -1799,7 +1799,10 @@ function toggleSection(id) {
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
-refreshAll();
+// Use force=false on boot — serve disk cache instantly, no Teller call.
+// User clicks ↻ Refresh to get live data. This avoids hitting the
+// Teller rate limit that prewarmHistory() may have consumed on startup.
+Promise.all([loadLiquidity(false), loadAllData()]);
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 let liquiditySnapshot = null; // captured after loadLiquidity
